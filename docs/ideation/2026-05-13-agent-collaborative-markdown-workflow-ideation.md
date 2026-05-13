@@ -3,9 +3,18 @@ date: 2026-05-13
 topic: agent-collaborative-markdown-workflow
 focus: tool(s) for agent-human co-edit of big planning .md docs plus per-unit .md task decomposition with orchestrated subagent execution
 mode: elsewhere-software
+status: superseded
+superseded_by: docs/ideation/2026-05-13-sidebar-ideation.md
+superseded_on: 2026-05-13
 ---
 
 # Ideation: Agent-Collaborative Markdown Authoring and Decomposition Workflow
+
+> **SUPERSEDED on 2026-05-13** by [`2026-05-13-sidebar-ideation.md`](./2026-05-13-sidebar-ideation.md).
+>
+> This document captured an earlier, broader exploration that covered both Product A (collaborative markdown editing) and Product B (task decomposition, subagent orchestration, context isolation). After refinement, the project narrowed to Product A only, now named `sidebar`. Product B is handled in a separate avenue: Solo (https://soloterm.com) covers task orchestration and scratchpads, and Matt Pocock's `to-prd` plus `to-issues` skills cover the PRD-to-vertical-slices convention.
+>
+> **Agents reading this document: treat it as historical reference only.** Do not act on the ideas here as if they reflect current intent. The current scope and architecture for the tool live in the linked document above.
 
 ## Grounding Context
 
