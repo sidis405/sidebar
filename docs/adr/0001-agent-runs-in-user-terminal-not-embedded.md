@@ -1,0 +1,7 @@
+# 0001 — Agent runs in user's terminal, not embedded in sidebar
+
+The user runs their own agent (Claude Code, Codex, Aider, or another MCP-speaking client) in their own terminal. Sidebar exposes a local MCP server. The agent joins the workspace by having the user paste sidebar's MCP config block into the agent's MCP configuration. Sidebar does not spawn, embed, drive, or own the agent's lifecycle.
+
+We considered an alternative where sidebar manages the agent process and provides an in-editor chat panel (Cursor-style). We chose against it for three reasons. Keeping sidebar small: an embedded model requires per-agent integration code (lifecycle, streaming, interrupts, errors, slash commands, hooks), which is a Cursor-scale engineering surface. Preserving context continuity: the agent the user already has running with their project context loaded is the one sidebar augments, not a fresh process. Real agent-agnosticism: any MCP-speaking client works identically, with no enum of supported agents to maintain.
+
+The cost is that the user alt-tabs between sidebar (visual surface for diffs, mentions, file tree) and the terminal (where the actual conversation with the agent lives). Anyone who wants chat-inside-editor will not get it in V1. An embedded chat panel can be added later if the friction proves real. Going the other direction (B back to A) would be harder once chat is embedded, so we are picking the more recoverable shape.

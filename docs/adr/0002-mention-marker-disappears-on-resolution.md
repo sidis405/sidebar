@@ -1,0 +1,7 @@
+# 0002 — Mention markers disappear on resolution
+
+When a **Mention** is resolved, the marker is removed from the file. The agent's response goes one of two places: replaced inline (for action verbs like `rephrase` or `expand`) or converted into an **Annotation** on the region (for query verbs like `factcheck` or `question`). Either way, the mention itself is gone.
+
+We considered leaving a `<!-- @agent[done] -->` trailer in the file as a permanent audit line so the activity history is visible without git tooling. We chose against it. The artifact is the doc; cluttering it with status trailers turns "scroll through the doc" into "scroll through doc plus agent log," for marginal value over what `git log -p` already provides. If sidebar later wants a "recent agent activity" panel, it can derive that view from git history rather than from inline trailers.
+
+Two consequences worth recording. First, the "in-progress" state is transient memory inside sidebar's process, not a value on disk. If sidebar restarts mid-mention, the visual state of that mention reverts from in-progress to pending; the agent can re-claim because the marker itself didn't change. The work is idempotent given the markdown didn't change. Second, the verb a user picks at insertion time implies the target mode (replace inline vs. become an annotation); the user doesn't pick a separate target-mode field. Verb-to-mode mappings are configurable.
