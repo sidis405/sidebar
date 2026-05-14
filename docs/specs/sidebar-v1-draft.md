@@ -12,7 +12,7 @@ This document captures the design of sidebar V1 as resolved by grilling the orig
 
 ## Summary
 
-Sidebar is a local-first markdown reading and co-authoring surface for a project's documentation. It exposes a local web-served editor UI and a local MCP server in the same Node process. The user runs `npx sidebar init` once per project, which writes a project-local `.mcp.json` pointing the agent's MCP client at `npx sidebar --stdio`. From then on, starting the agent in the project (e.g. `claude`) automatically spawns sidebar as a stdio subprocess and opens its browser UI. The agent is connected on first boot, no copy-paste, no restart loop. Sidebar can also be launched standalone via `npx sidebar` for read-only or no-agent use; the standalone mode runs over HTTP and additional agents can attach via the printed URL. See [ADR-0007](../adr/0007-stdio-first-invite-with-http-standalone.md) for the transport rationale.
+Sidebar is a local-first markdown reading and co-authoring surface for a project's documentation. It exposes a local web-served editor UI and a local MCP server in the same Node process. The user runs `npx sidebar init` once per project, which writes a project-local `.mcp.json` pointing the agent's MCP client at `npx sidebar --stdio`. From then on, starting the agent in the project (e.g. `claude`) automatically spawns sidebar as a stdio subprocess and opens its browser UI. The agent is connected on first boot, no copy-paste, no restart loop. Sidebar can also be launched standalone via `npx sidebar` for read-only or no-agent use; the standalone mode runs over HTTP and additional agents can attach via the printed URL. See [ADR-0007](../decisions/0007-stdio-first-invite-with-http-standalone.md) for the transport rationale.
 
 The agent's lifecycle is owned by the user, not sidebar. The agent runs in the user's terminal. Sidebar provides the human-facing visual surface (editor, file tree, diffs, mention queue, status drawer) and the MCP tools the agent uses to read, observe, and act on the workspace within a permission boundary defined by mentions and annotations.
 
@@ -20,23 +20,23 @@ The agent's lifecycle is owned by the user, not sidebar. The agent runs in the u
 
 | # | Decision | Reference |
 |---|----------|-----------|
-| Q1 | Agent runs in user's terminal, not embedded in sidebar | [ADR-0001](../adr/0001-agent-runs-in-user-terminal-not-embedded.md) |
+| Q1 | Agent runs in user's terminal, not embedded in sidebar | [ADR-0001](../decisions/0001-agent-runs-in-user-terminal-not-embedded.md) |
 | Q2 | Agent connection is optional; sidebar runs without one | This document |
 | Q3 | Annotated middle permission model: agent leaves notes anywhere, but only edits prose via a mention | This document |
-| Q4 | Mention markers disappear on resolution; response replaces inline or becomes an annotation by verb | [ADR-0002](../adr/0002-mention-marker-disappears-on-resolution.md) |
+| Q4 | Mention markers disappear on resolution; response replaces inline or becomes an annotation by verb | [ADR-0002](../decisions/0002-mention-marker-disappears-on-resolution.md) |
 | Q5 | Hybrid verb policy: built-in verb set with target-mode mappings, extensible via config, unknown verbs default to annotation mode | This document |
 | Q6 | User edits during open mentions do not cancel them; agent works on latest content; optimistic concurrency on resolve via `base_hash` | This document |
 | Q7 | Agent can suggest prose edits via `type=suggestion` annotations with human accept/reject | This document |
 | Q8 | One workspace per sidebar instance | This document |
 | Q9 | Default scope is `docs/**/*.md` strict; prompt on missing `docs/` | This document |
-| Q10 | Marker shape is HTML comment begin/end pair with explicit sidebar-generated id | [ADR-0003](../adr/0003-marker-shape-begin-end-pair-with-id.md) |
+| Q10 | Marker shape is HTML comment begin/end pair with explicit sidebar-generated id | [ADR-0003](../decisions/0003-marker-shape-begin-end-pair-with-id.md) |
 | Q11 | MCP tool surface settled (full list below) | This document |
-| Q11+ | Agent can create mentions with a constrained agent-verb set; rate-limited; counter exposed | [ADR-0004](../adr/0004-agent-can-create-mentions-with-constrained-verbs.md) |
-| Q12 | V1 editor capabilities settled (full list below); CodeMirror 6 foundation; manual save with dirty-buffer MCP signal | [ADR-0005](../adr/0005-manual-save-with-dirty-buffer-mcp-signal.md) |
+| Q11+ | Agent can create mentions with a constrained agent-verb set; rate-limited; counter exposed | [ADR-0004](../decisions/0004-agent-can-create-mentions-with-constrained-verbs.md) |
+| Q12 | V1 editor capabilities settled (full list below); CodeMirror 6 foundation; manual save with dirty-buffer MCP signal | [ADR-0005](../decisions/0005-manual-save-with-dirty-buffer-mcp-signal.md) |
 | Q13 | `.sidebar/` config shape: two files (`config.json` committed, `local.json` gitignored), lazy creation on first persistent write, no global config, strict validation | This document |
-| Q14 | Agent identity from MCP `clientInfo.name` with collision suffix; human author from git user.name with fallback chain; multi-agent permitted in V1 with minimal UX | [ADR-0006](../adr/0006-multi-agent-permitted-in-v1.md) |
+| Q14 | Agent identity from MCP `clientInfo.name` with collision suffix; human author from git user.name with fallback chain; multi-agent permitted in V1 with minimal UX | [ADR-0006](../decisions/0006-multi-agent-permitted-in-v1.md) |
 | Q15 | Operational failure modes: disconnect releases claims after 30s grace, no soft-delete, tolerant marker parse with red gutter, port collision refuses to start, MCP crash kills process, editor auto-reconnects | This document |
-| Q15.5 | Invite and transport: stdio-first via `init`-written project `.mcp.json`, HTTP standalone preserved, `.mcp.json` committed by default | [ADR-0007](../adr/0007-stdio-first-invite-with-http-standalone.md) |
+| Q15.5 | Invite and transport: stdio-first via `init`-written project `.mcp.json`, HTTP standalone preserved, `.mcp.json` committed by default | [ADR-0007](../decisions/0007-stdio-first-invite-with-http-standalone.md) |
 | Q16 | Form factor: linear port fallback 5180-5189, default-browser auto-open with `"none"` override, no self-update in V1, Node 20+, no daemon, stderr logs, no telemetry | This document |
 | Q17 | Two-tier co-author skill: MCP server description floor plus `scaffold-skill` file ceiling; default target `.claude/skills/sidebar-collaboration/SKILL.md`; idempotent overwrite | This document |
 
@@ -293,7 +293,7 @@ Markers already on disk are never rewritten when connections change. Identity in
 
 ### Multi-agent semantics
 
-Sidebar permits multiple MCP clients to connect to the same workspace simultaneously (see [ADR-0006](../adr/0006-multi-agent-permitted-in-v1.md)). The V1 stance is: support the architecture, do not invest in per-agent UX.
+Sidebar permits multiple MCP clients to connect to the same workspace simultaneously (see [ADR-0006](../decisions/0006-multi-agent-permitted-in-v1.md)). The V1 stance is: support the architecture, do not invest in per-agent UX.
 
 - **Mention claim.** `mark_in_progress(mention_id)` is exclusive. First caller wins. Subsequent callers receive a conflict error including the winning client's name. Resolving or reporting an error on a claimed mention releases the claim; another agent may then claim it.
 - **Rate limit.** The agent-mention rate limit (ADR-0004) is per-workspace, not per-agent. All connected agents share the same `maxOpen` budget. Simpler; the limit is a noise floor on collective agent chatter, not a fairness mechanism.
@@ -346,7 +346,7 @@ Any unhandled error in MCP server code crashes the whole sidebar process. The br
 
 ### Editor disconnect from server
 
-The browser tab auto-reconnects with exponential backoff (1s, 2s, 5s, 10s, capped at 30s) and shows a "reconnecting..." indicator. On reconnect, the editor re-fetches workspace state (file list, current file content, pending mentions, annotations). The dirty buffer survives in browser memory; if disk content still matches the last-saved snapshot, the buffer stays. If disk changed during the disconnect (another tool wrote, sidebar restarted), the existing conflict modal from [ADR-0005](../adr/0005-manual-save-with-dirty-buffer-mcp-signal.md) fires (keep yours, take theirs, or merge view).
+The browser tab auto-reconnects with exponential backoff (1s, 2s, 5s, 10s, capped at 30s) and shows a "reconnecting..." indicator. On reconnect, the editor re-fetches workspace state (file list, current file content, pending mentions, annotations). The dirty buffer survives in browser memory; if disk content still matches the last-saved snapshot, the buffer stays. If disk changed during the disconnect (another tool wrote, sidebar restarted), the existing conflict modal from [ADR-0005](../decisions/0005-manual-save-with-dirty-buffer-mcp-signal.md) fires (keep yours, take theirs, or merge view).
 
 ## Form Factor
 

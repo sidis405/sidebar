@@ -22,7 +22,9 @@
     "test:watch": "vitest",
     "typecheck": "tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.editor.json --noEmit",
     "lint": "biome check .",
-    "format": "biome format . --write"
+    "format": "biome format . --write",
+    "docs": "mkdocs serve --dev-addr 127.0.0.1:8001",
+    "docs:build": "mkdocs build --strict"
   },
   "dependencies": {
     "@codemirror/commands": "^6.6.0",
