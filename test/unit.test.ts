@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { ArgsError, parseArgs } from "../src/server/args.ts";
 import { assertNodeVersion } from "../src/server/runtime-check.ts";
 import { nextBackoffMs } from "../src/shared/backoff.ts";
 
@@ -11,6 +12,29 @@ describe("Node version baseline", () => {
   it("accepts Node 20+", () => {
     expect(() => assertNodeVersion("v20.11.0")).not.toThrow();
     expect(() => assertNodeVersion("v22.4.0")).not.toThrow();
+  });
+});
+
+// Hardening (Copilot review): --port must reject partial-numeric input
+// rather than silently coercing "123abc" -> 123 via Number.parseInt.
+describe("--port strict parsing", () => {
+  it("rejects '123abc' rather than silently using 123", () => {
+    expect(() => parseArgs(["--port", "123abc"])).toThrowError(ArgsError);
+  });
+  it("rejects '1.5'", () => {
+    expect(() => parseArgs(["--port", "1.5"])).toThrowError(ArgsError);
+  });
+  it("rejects negative values", () => {
+    expect(() => parseArgs(["--port", "-1"])).toThrowError(ArgsError);
+  });
+  it("rejects values above 65535", () => {
+    expect(() => parseArgs(["--port", "70000"])).toThrowError(/out of range/);
+  });
+  it("accepts a clean decimal", () => {
+    expect(parseArgs(["--port", "5180"]).port).toBe(5180);
+  });
+  it("accepts 0 (OS-assigned)", () => {
+    expect(parseArgs(["--port", "0"]).port).toBe(0);
   });
 });
 

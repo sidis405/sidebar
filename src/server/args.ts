@@ -25,9 +25,15 @@ export function parseArgs(argv: string[]): ParsedArgs {
       case "--port":
       case "-p": {
         const v = argv[++i];
-        const n = Number.parseInt(v ?? "", 10);
-        if (!Number.isFinite(n) || n < 0 || n > 65_535) {
-          throw new ArgsError(`--port expects an integer 0-65535 (got ${v ?? "<missing>"})`);
+        // parseInt silently coerces "123abc" -> 123 and "1.5" -> 1, both of
+        // which can land the user on a port they did not ask for. Match
+        // strict decimal-digit form first.
+        if (!v || !/^\d+$/.test(v)) {
+          throw new ArgsError(`--port expects a non-negative integer (got ${v ?? "<missing>"})`);
+        }
+        const n = Number.parseInt(v, 10);
+        if (n > 65_535) {
+          throw new ArgsError(`--port out of range 0-65535 (got ${n})`);
         }
         out.port = n;
         break;

@@ -1,4 +1,4 @@
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, posix } from "node:path";
 import { sha256 } from "./hash.js";
 import type { Workspace } from "./workspace.js";
@@ -10,6 +10,7 @@ export async function readWorkspaceFile(
   relPath: string,
 ): Promise<ReadResult> {
   const safe = assertSafeRel(relPath);
+  assertInScope(ws, safe);
   const content = await readFile(ws.toAbs(safe), "utf8");
   return { content, hash: sha256(content) };
 }
@@ -25,6 +26,7 @@ export async function saveWorkspaceFile(
   baseHash: string,
 ): Promise<SaveOutcome> {
   const safe = assertSafeRel(relPath);
+  assertInScope(ws, safe);
   const abs = ws.toAbs(safe);
   try {
     const onDisk = await readFile(abs, "utf8");
@@ -55,6 +57,7 @@ export async function createFile(
     throw new Error(`new file must end in .md (got ${name})`);
   }
   const rel = joinRel(parent, name);
+  assertInScope(ws, rel);
   const abs = ws.toAbs(rel);
   await mkdir(dirname(abs), { recursive: true });
   await writeFile(abs, "", { encoding: "utf8", flag: "wx" });
@@ -79,8 +82,20 @@ export async function renamePath(
 ): Promise<void> {
   const safeFrom = assertSafeRel(from);
   const safeTo = assertSafeRel(to);
-  await mkdir(dirname(ws.toAbs(safeTo)), { recursive: true });
-  await rename(ws.toAbs(safeFrom), ws.toAbs(safeTo));
+  // node:fs/promises rename silently clobbers an existing destination on
+  // POSIX. Stat first and refuse rather than destroying the user's content.
+  // (A concurrent write between this stat and the rename below would surface
+  // via the editor's conflict modal on next save anyway, but for tree CRUD
+  // we want the clearer "destination already exists" failure.)
+  const toAbs = ws.toAbs(safeTo);
+  try {
+    await stat(toAbs);
+    throw new Error(`destination already exists: ${to}`);
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
+  }
+  await mkdir(dirname(toAbs), { recursive: true });
+  await rename(ws.toAbs(safeFrom), toAbs);
 }
 
 export async function deletePath(ws: Workspace, relPath: string): Promise<void> {
@@ -90,11 +105,23 @@ export async function deletePath(ws: Workspace, relPath: string): Promise<void> 
 
 function assertSafeRel(rel: string): string {
   if (rel === "") throw new Error("path is empty");
+  // The protocol declares POSIX paths. Backslashes are directory separators
+  // on Windows after we hand the string to node:path, so posix.normalize
+  // would let "sub\\..\\..\\outside.md" pass while the filesystem treats it
+  // as a parent-directory traversal. Reject up front.
+  if (rel.includes("\\")) throw new Error(`path uses backslash separators: ${rel}`);
+  if (rel.includes("\0")) throw new Error(`path contains NUL: ${rel}`);
   const norm = posix.normalize(rel);
-  if (norm.startsWith("..") || norm.startsWith("/") || norm.includes("\0")) {
+  if (norm.startsWith("..") || norm.startsWith("/") || norm === ".") {
     throw new Error(`path escapes workspace: ${rel}`);
   }
   return norm;
+}
+
+function assertInScope(ws: Workspace, safeRel: string): void {
+  if (!ws.matches(safeRel)) {
+    throw new Error(`path is outside workspace scope (${ws.scope}): ${safeRel}`);
+  }
 }
 
 function joinRel(parent: string, name: string): string {

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { nextBackoffMs } from "../shared/backoff.ts";
 import type { ClientMessage, ServerMessage } from "../shared/protocol.ts";
 
@@ -68,17 +68,22 @@ export function useWs(): WsApi {
     };
   }, []);
 
-  const api: WsApi = {
-    state,
-    attempts,
-    send: (m) => {
-      const ws = wsRef.current;
-      if (ws && ws.readyState === ws.OPEN) ws.send(JSON.stringify(m));
-    },
-    subscribe: (fn) => {
-      subscribersRef.current.add(fn);
-      return () => subscribersRef.current.delete(fn);
-    },
-  };
-  return api;
+  // `send` and `subscribe` reach into refs, so they have no real dependency
+  // on render-scoped values. Stabilize them with useCallback so the App's
+  // effect deps (which include ws.send) don't fire on every render — that
+  // loop would re-issue `list`, re-render on the reply, and so on.
+  const send = useCallback((m: ClientMessage) => {
+    const ws = wsRef.current;
+    if (ws && ws.readyState === ws.OPEN) ws.send(JSON.stringify(m));
+  }, []);
+  const subscribe = useCallback((fn: (m: ServerMessage) => void) => {
+    subscribersRef.current.add(fn);
+    return () => {
+      subscribersRef.current.delete(fn);
+    };
+  }, []);
+  return useMemo(
+    () => ({ state, attempts, send, subscribe }),
+    [state, attempts, send, subscribe],
+  );
 }

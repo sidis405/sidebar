@@ -1,6 +1,6 @@
 import { type IncomingMessage, type Server, type ServerResponse, createServer } from "node:http";
 import { readFile, stat } from "node:fs/promises";
-import { extname, resolve } from "node:path";
+import { extname, relative, resolve, sep } from "node:path";
 import { WebSocketServer, type WebSocket } from "ws";
 import type { ClientMessage, ServerMessage } from "../shared/protocol.js";
 import {
@@ -51,7 +51,19 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
   const port = await listen(http, opts.port, host);
 
   const wss = new WebSocketServer({ noServer: true });
+  const allowedOrigins = originAllowlistFor(host, port);
   http.on("upgrade", (req, socket, head) => {
+    // CSRF defense: the WebSocket protocol can read and mutate workspace
+    // files. A malicious public page can fetch `ws://127.0.0.1:<port>/ws`
+    // from any browser the user opens. Only allow upgrades that either
+    // (a) carry no Origin header (non-browser clients, including our tests
+    // and curl), or (b) carry an Origin that matches the sidebar listener.
+    const origin = req.headers.origin;
+    if (origin !== undefined && !allowedOrigins.has(origin)) {
+      socket.write("HTTP/1.1 403 Forbidden\r\n\r\n");
+      socket.destroy();
+      return;
+    }
     if (req.url === "/ws" || req.url?.startsWith("/ws?")) {
       wss.handleUpgrade(req, socket, head, (ws) => wss.emit("connection", ws, req));
     } else {
@@ -110,7 +122,23 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
         ws.send(JSON.stringify({ kind: "error", message: "invalid JSON" } satisfies ServerMessage));
         return;
       }
-      void handleMessage(msg, ws, workspace, refreshTree);
+      // Catch-all: every per-case handler already converts errors to a
+      // `kind: "error"` reply, but anything that throws synchronously or
+      // before the inner try/catch (e.g. `list` building the tree) would
+      // otherwise become an unhandled rejection. Belt and suspenders.
+      void handleMessage(msg, ws, workspace, refreshTree).catch((e) => {
+        try {
+          ws.send(
+            JSON.stringify({
+              kind: "error",
+              message: `unhandled error processing ${msg.kind}`,
+              cause: (e as Error).message,
+            } satisfies ServerMessage),
+          );
+        } catch {
+          /* socket may already be closed */
+        }
+      });
     });
     ws.send(
       JSON.stringify({
@@ -184,8 +212,12 @@ async function handleMessage(
     case "hello":
       return;
     case "list": {
-      const nodes = await buildTree(workspace);
-      send({ kind: "tree", nodes });
+      try {
+        const nodes = await buildTree(workspace);
+        send({ kind: "tree", nodes });
+      } catch (e) {
+        send({ kind: "error", message: "list failed", cause: (e as Error).message });
+      }
       return;
     }
     case "open":
@@ -270,11 +302,20 @@ async function handleHttp(
   }
   const path = url.split("?")[0].replace(/^\/+/, "");
   const candidate = path === "" ? "index.html" : path;
-  const abs = resolve(staticRoot, candidate);
-  if (!abs.startsWith(resolve(staticRoot))) {
-    res.statusCode = 403;
-    res.end("forbidden");
-    return;
+  const root = resolve(staticRoot);
+  const abs = resolve(root, candidate);
+  // Sibling-path defense: `abs.startsWith(root)` accepts e.g. /foo/static-evil
+  // when root is /foo/static. Use path.relative so any escape resolves to a
+  // segment beginning with "..".
+  const rel = relative(root, abs);
+  if (rel.startsWith("..") || rel.startsWith(sep) || rel === "") {
+    // rel === "" is the root itself; we redirect that to index.html below,
+    // but reject anything else above the root.
+    if (rel !== "") {
+      res.statusCode = 403;
+      res.end("forbidden");
+      return;
+    }
   }
   try {
     const s = await stat(abs);
@@ -295,6 +336,20 @@ async function handleHttp(
     res.statusCode = 404;
     res.end("not found");
   }
+}
+
+function originAllowlistFor(host: string, port: number): Set<string> {
+  // The HTTP listener binds to either `127.0.0.1` (our default) or
+  // `localhost`-style aliases. Browsers normalize Origin from whatever the
+  // user navigated to. Accept the canonical IPv4 form, the IPv6 loopback,
+  // and `localhost`, all on the bound port.
+  const out = new Set<string>([
+    `http://${host}:${port}`,
+    `http://127.0.0.1:${port}`,
+    `http://[::1]:${port}`,
+    `http://localhost:${port}`,
+  ]);
+  return out;
 }
 
 function contentTypeFor(path: string): string {

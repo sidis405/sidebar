@@ -193,6 +193,76 @@ describe("server protocol", () => {
     expect(paths).not.toContain("../README.md");
     expect(paths.every((p) => p.endsWith(".md"))).toBe(true);
   });
+
+  // Hardening (Copilot review): open must refuse paths outside the glob even
+  // when the path is otherwise inside the workspace root.
+  it("refuses to open files that do not match the workspace glob", async () => {
+    await writeFile(join(cwd, "docs", "secret.txt"), "shh\n");
+    client.send({ kind: "open", path: "secret.txt" });
+    const err = await client.next("error");
+    expect(err.message).toContain("open failed: secret.txt");
+    expect(err.cause).toMatch(/outside workspace scope/);
+  });
+
+  // Hardening: backslash-laced traversal is rejected before path.join sees it.
+  it("rejects paths that contain backslashes", async () => {
+    client.send({ kind: "open", path: "sub\\..\\..\\outside.md" });
+    const err = await client.next("error");
+    expect(err.cause).toMatch(/backslash/);
+  });
+
+  // Hardening: rename must not silently overwrite an existing file.
+  it("refuses to rename onto an existing file", async () => {
+    client.send({ kind: "rename", from: "alpha.md", to: "sub/beta.md" });
+    const err = await client.next("error");
+    expect(err.message).toBe("rename failed");
+    expect(err.cause).toMatch(/destination already exists/);
+    // And the original file is still there.
+    client.send({ kind: "list" });
+    const tree = await client.next("tree");
+    const paths = collectPaths(tree.nodes);
+    expect(paths).toEqual(expect.arrayContaining(["alpha.md", "sub/beta.md"]));
+  });
+});
+
+describe("server WebSocket origin gate", () => {
+  let cwd: string;
+  let cli: LaunchedCli;
+  beforeEach(async () => {
+    cwd = await makeWorkspace({ docs: { "alpha.md": "# alpha\n" } });
+    cli = launchCli(cwd, ["--port", "0", "--browser", "none"]);
+    await cli.url;
+  });
+  afterEach(async () => {
+    await cli?.stop();
+    await destroyWorkspace(cwd);
+  });
+
+  // Hardening (Copilot review): a malicious origin must not be allowed to
+  // upgrade to the workspace WebSocket and drive file operations.
+  it("rejects a WebSocket upgrade from an Origin that is not the listener", async () => {
+    const url = (await cli.url).replace(/^http/, "ws");
+    const ws = new WebSocket(`${url}/ws`, { headers: { Origin: "https://evil.example" } });
+    const closed = await new Promise<{ code: number; ok: boolean }>((res) => {
+      ws.once("unexpected-response", (_req, resp) => res({ code: resp.statusCode ?? -1, ok: false }));
+      ws.once("error", () => res({ code: -1, ok: false }));
+      ws.once("open", () => res({ code: 200, ok: true }));
+    });
+    expect(closed.ok).toBe(false);
+    expect([401, 403]).toContain(closed.code);
+  });
+
+  it("accepts a WebSocket upgrade from the listener origin", async () => {
+    const httpUrl = await cli.url;
+    const ws = new WebSocket(`${httpUrl.replace(/^http/, "ws")}/ws`, {
+      headers: { Origin: httpUrl },
+    });
+    await new Promise<void>((res, rej) => {
+      ws.once("open", () => res());
+      ws.once("error", rej);
+    });
+    ws.close();
+  });
 });
 
 function collectPaths(nodes: Array<{ path: string; kind: "file" | "dir"; children?: any[] }>): string[] {
