@@ -1,5 +1,6 @@
 site_name: Sidebar docs
 site_description: Engineering documentation for the Sidebar Package.
+site_url: https://sidis405.github.io/sidebar/
 
 repo_url: https://github.com/sidis405/sidebar
 repo_name: sidis405/sidebar
