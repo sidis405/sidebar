@@ -1,0 +1,59 @@
+{
+  "name": "sidebar",
+  "version": "0.1.0",
+  "description": "Local-first markdown reading and co-authoring surface for a project's docs.",
+  "type": "module",
+  "bin": {
+    "sidebar": "./dist/server/cli.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "npm run build:editor && npm run build:server",
+    "build:editor": "vite build",
+    "build:server": "tsc -p tsconfig.server.json",
+    "dev": "tsx src/server/cli.ts",
+    "start": "node dist/server/cli.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.editor.json --noEmit",
+    "lint": "biome check .",
+    "format": "biome format . --write"
+  },
+  "dependencies": {
+    "@codemirror/commands": "^6.6.0",
+    "@codemirror/lang-markdown": "^6.3.0",
+    "@codemirror/language": "^6.10.2",
+    "@codemirror/search": "^6.5.6",
+    "@codemirror/state": "^6.4.1",
+    "@codemirror/view": "^6.28.0",
+    "@lezer/highlight": "^1.2.0",
+    "@lezer/markdown": "^1.3.0",
+    "chokidar": "^3.6.0",
+    "fast-glob": "^3.3.2",
+    "open": "^10.1.0",
+    "picomatch": "^4.0.2",
+    "react": "^18.3.1",
+    "react-arborist": "^3.4.0",
+    "react-dom": "^18.3.1",
+    "vscode-icons-js": "^11.6.1",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.8.3",
+    "@types/node": "^20.14.0",
+    "@types/picomatch": "^3.0.0",
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0",
+    "@types/ws": "^8.5.10",
+    "@vitejs/plugin-react": "^4.3.1",
+    "tsx": "^4.16.0",
+    "typescript": "^5.5.0",
+    "vite": "^5.3.0",
+    "vitest": "^1.6.0"
+  }
+}
