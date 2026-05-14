@@ -1,0 +1,44 @@
+# Strict validation, no silent fallback. Sidebar refuses to start when
+# .sidebar/config.json or .sidebar/local.json is malformed; the error
+# names the file and the field. Exit code is 8 in every case so wrapper
+# scripts can distinguish a config-rejection from a port collision (4),
+# a stale primary (7), or a missing workspace (5).
+
+# ---- (1) invalid JSON ----------------------------------------------------
+$ cat .sidebar/config.json
+{ not json
+$ node /path/to/sidebar/dist/server/cli.js --browser none --port 0
+.sidebar/config.json: invalid JSON (Expected property name or '}' in JSON at position 2 (line 1 column 3))
+$ echo "exit=$?"
+exit=8
+
+# ---- (2) version other than 1 (V2 migration hook) ------------------------
+$ cat .sidebar/local.json
+{
+  "version": 2
+}
+$ node /path/to/sidebar/dist/server/cli.js --browser none --port 0
+.sidebar/local.json: version: version must be 1 (V2 migration hook; other values rejected)
+$ echo "exit=$?"
+exit=8
+
+# ---- (3) unknown top-level key -------------------------------------------
+$ cat .sidebar/config.json
+{ "version": 1, "mystery": true }
+$ node /path/to/sidebar/dist/server/cli.js --browser none --port 0
+.sidebar/config.json: mystery: unknown key 'mystery'
+$ echo "exit=$?"
+exit=8
+
+# ---- (4) redefining a built-in verb --------------------------------------
+$ cat .sidebar/config.json
+{
+  "version": 1,
+  "verbs": {
+    "human": { "rephrase": { "mode": "annotation" } }
+  }
+}
+$ node /path/to/sidebar/dist/server/cli.js --browser none --port 0
+.sidebar/config.json: verbs.human.rephrase: cannot redefine built-in human verb 'rephrase'
+$ echo "exit=$?"
+exit=8

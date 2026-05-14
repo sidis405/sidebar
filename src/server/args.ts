@@ -8,7 +8,9 @@ export type ParsedArgs = {
   yes: boolean;
   port: number | undefined;
   scope: string | undefined;
-  browser: string;
+  /** Undefined when --browser was not passed; resolves from local.json or
+   * the "default" fallback at the call site. */
+  browser: string | undefined;
   verbose: boolean;
   quiet: boolean;
   helpRequested: boolean;
@@ -23,7 +25,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
     yes: false,
     port: undefined,
     scope: undefined,
-    browser: "default",
+    browser: undefined,
     verbose: false,
     quiet: false,
     helpRequested: false,
