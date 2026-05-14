@@ -160,7 +160,6 @@ describe("CLI: clean shutdown", () => {
       const cli = launchCli(cwd, ["--port", "5286"]);
       await cli.url;
       await cli.stop();
-      // If the port is still bound, this listen call rejects.
       await waitFor(
         () =>
           new Promise<boolean>((res, rej) => {
@@ -171,6 +170,38 @@ describe("CLI: clean shutdown", () => {
             });
           }),
         { timeoutMs: 5000, label: "port 5286 to be released" },
+      );
+    } finally {
+      await destroyWorkspace(cwd);
+    }
+  });
+
+  // AC14, regression: Ctrl-C must still release the port when an editor tab
+  // has an open WebSocket. Node's http.close() otherwise waits for upgraded
+  // sockets to drain on their own.
+  it("releases the port even with an open WebSocket client", async () => {
+    const cwd = await makeWorkspace();
+    try {
+      const cli = launchCli(cwd, ["--port", "5287"]);
+      const url = await cli.url;
+      // Open a WebSocket connection like an editor tab would.
+      const { WebSocket } = await import("ws");
+      const ws = new WebSocket(`${url.replace("http", "ws")}/ws`);
+      await new Promise<void>((res, rej) => {
+        ws.once("open", () => res());
+        ws.once("error", rej);
+      });
+      await cli.stop();
+      await waitFor(
+        () =>
+          new Promise<boolean>((res, rej) => {
+            const s = createServer();
+            s.once("error", rej);
+            s.listen(5287, "127.0.0.1", () => {
+              s.close(() => res(true));
+            });
+          }),
+        { timeoutMs: 5000, label: "port 5287 to be released" },
       );
     } finally {
       await destroyWorkspace(cwd);

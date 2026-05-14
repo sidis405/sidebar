@@ -137,8 +137,19 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
     url,
     port,
     close: async () => {
+      // Terminate live WebSocket clients before closing the HTTP server, or
+      // http.close() will wait for the existing upgraded sockets to drain on
+      // their own — which, with an editor tab still open, never happens.
+      for (const c of clients) {
+        try {
+          c.terminate();
+        } catch {
+          /* socket already gone */
+        }
+      }
       await watcher.close();
       await new Promise<void>((res) => wss.close(() => res()));
+      http.closeAllConnections();
       await new Promise<void>((res) => http.close(() => res()));
     },
   };

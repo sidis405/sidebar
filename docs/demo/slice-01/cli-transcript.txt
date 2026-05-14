@@ -1,0 +1,85 @@
+# sidebar slice-01 CLI demo
+
+These transcripts exercise each CLI-side acceptance criterion in issue #1.
+Each block starts with the user's invocation; lines beginning `>` are stderr
+output from the sidebar process. All transcripts were captured against the
+binary produced by `npm run build`.
+
+## AC2 + AC14: --port binds explicit port; SIGINT releases it
+
+```
+$ cd my-project
+$ node dist/server/cli.js --port 5277 --browser none
+  sidebar listening at http://127.0.0.1:5277
+    workspace: /private/tmp/sidebar-cli-demo/docs
+    scope:     docs/**/*.md
+  received SIGINT, shutting down
+$ ^C
+(port 5277 released; no orphan process)
+```
+
+## AC2: --port 0 lets the OS pick a free port
+
+```
+$ node dist/server/cli.js --port 0 --browser none
+  sidebar listening at http://127.0.0.1:56597
+    workspace: /private/tmp/sidebar-cli-demo/docs
+    scope:     docs/**/*.md
+  received SIGINT, shutting down
+```
+
+## AC2: explicit port collision refused with a clear error
+
+```
+# (port 5283 already bound by another process)
+$ node dist/server/cli.js --port 5283 --browser none
+  port 5283 is already in use (EADDRINUSE). Pick a different --port, or use --port 0.
+(exit code: 4)
+```
+
+## AC3: --browser none skips launch (URL still printed on stderr)
+
+```
+$ node dist/server/cli.js --port 5294 --browser none
+  sidebar listening at http://127.0.0.1:5294
+    workspace: /private/tmp/sidebar-cli-demo/docs
+    scope:     docs/**/*.md
+  received SIGINT, shutting down
+```
+
+## AC4: docs/ missing + non-TTY stdin refuses to silently start
+
+```
+$ cd project-without-docs
+$ node dist/server/cli.js < /dev/null   # stdin is not a TTY
+  docs/ not found at /private/tmp/sidebar-no-docs.
+  Sidebar uses docs/**/*.md as its default workspace scope.
+  Re-run with --scope "<glob>" or create docs/ and try again.
+(exit code: 5)
+```
+
+When stdin _is_ a TTY, the same condition prints an interactive
+`[c/s/q]: ` prompt instead — create docs/, supply a different scope glob,
+or quit. Exercised manually; the non-TTY branch above is pinned by
+`test/cli.test.ts` ("refuses to silently start when docs/ is missing
+and stdin is not a TTY").
+
+## AC5: --scope overrides the default glob (boots against notes/)
+
+```
+$ node dist/server/cli.js --port 5295 --browser none --scope 'notes/**/*.md'
+  sidebar listening at http://127.0.0.1:5295
+    workspace: /private/tmp/sidebar-no-docs/notes
+    scope:     notes/**/*.md
+  received SIGINT, shutting down
+```
+
+## AC13: Node 20+ baseline check
+
+Pinned by `test/unit.test.ts` ('Node version baseline'). On Node 18
+sidebar refuses to start with:
+
+```
+sidebar requires Node 20 or newer (got v18.19.0). Update Node and try again.
+(exit code: 2)
+```

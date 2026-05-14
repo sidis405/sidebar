@@ -1,0 +1,193 @@
+:root {
+  --bg: #ffffff;
+  --fg: #1f1f1f;
+  --muted: #6b7280;
+  --border: #e5e7eb;
+  --sidebar-bg: #f7f7f8;
+  --sidebar-fg: #2a2a2a;
+  --accent: #3478f6;
+  --row-hover: rgba(0, 0, 0, 0.04);
+  --row-selected: rgba(52, 120, 246, 0.12);
+  --warn: #b45309;
+}
+
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; margin: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  color: var(--fg);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+}
+
+.app {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  height: 100%;
+}
+
+.sidebar {
+  background: var(--sidebar-bg);
+  color: var(--sidebar-fg);
+  border-right: 1px solid var(--border);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.file-tree { height: 100%; display: flex; flex-direction: column; position: relative; }
+.file-tree-header {
+  padding: 10px 12px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  border-bottom: 1px solid var(--border);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+  font-size: 13px;
+  cursor: pointer;
+  user-select: none;
+}
+.row:hover { background: var(--row-hover); }
+.row.selected { background: var(--row-selected); }
+.row-icon { width: 16px; height: 16px; display: inline-flex; }
+.row-icon svg { width: 16px; height: 16px; }
+.row-name { flex: 1 1 auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.row-dirty { color: var(--accent); font-size: 14px; line-height: 1; }
+
+.context-menu {
+  position: fixed;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.15);
+  padding: 4px;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  min-width: 140px;
+}
+.context-menu button {
+  text-align: left;
+  background: transparent;
+  border: 0;
+  padding: 6px 10px;
+  font-size: 13px;
+  color: inherit;
+  cursor: pointer;
+  border-radius: 4px;
+}
+.context-menu button:hover:not(:disabled) { background: var(--row-hover); }
+.context-menu button:disabled { color: var(--muted); cursor: not-allowed; }
+
+.editor-pane {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.editor-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+.filename { display: inline-flex; align-items: center; gap: 6px; }
+.filename .dirty { color: var(--accent); font-size: 14px; line-height: 1; }
+.connection { font-size: 12px; color: var(--muted); }
+.connection.reconnecting { color: var(--warn); }
+.connection.closed { color: #c00; }
+
+.empty-state {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.cm-host { flex: 1; min-height: 0; }
+.cm-editor { height: 100%; font-size: 14px; }
+.cm-content { padding: 16px 18px; line-height: 1.55; }
+.cm-scroller { font-family: ui-monospace, Menlo, monospace; }
+
+/* Hide markdown syntax tokens on lines without the cursor — implements the
+   live-preview behavior described in spec section "Editor (V1)". */
+.cm-line:not(.cm-activeLine) .cm-md-syntax {
+  display: none;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+.modal {
+  background: var(--bg);
+  border-radius: 10px;
+  box-shadow: 0 16px 32px rgba(0, 0, 0, 0.25);
+  width: min(960px, 92vw);
+  max-height: 86vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.modal header { padding: 16px 20px; border-bottom: 1px solid var(--border); }
+.modal header h2 { margin: 0 0 4px; font-size: 16px; }
+.modal header p { margin: 0; color: var(--muted); font-size: 13px; }
+.modal .merge-preview {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  padding: 16px 20px;
+  overflow: auto;
+}
+.modal .merge-preview h3 {
+  margin: 0 0 6px;
+  font-size: 12px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.modal .merge-preview pre {
+  margin: 0;
+  background: var(--sidebar-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px;
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 50vh;
+  overflow: auto;
+}
+.modal footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 20px;
+  border-top: 1px solid var(--border);
+}
+.modal footer button {
+  font-size: 13px;
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  cursor: pointer;
+}
+.modal footer button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.modal footer button.link { background: transparent; border-color: transparent; color: var(--muted); }
