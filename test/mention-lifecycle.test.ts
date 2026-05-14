@@ -29,7 +29,10 @@ async function connectStdio(
 ): Promise<StdioHandle> {
   const transport = new StdioClientTransport({
     command: TSX_BIN,
-    args: [CLI_ENTRY, "--stdio"],
+    // --port 0 keeps the stdio CLI's internal HTTP listener on an OS-random
+    // port instead of the 5180-5189 fallback range, so it doesn't contend
+    // with parallel test files that also touch the fallback range.
+    args: [CLI_ENTRY, "--stdio", "--port", "0"],
     cwd,
     env: {
       ...(process.env as Record<string, string>),
