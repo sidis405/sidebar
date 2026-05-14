@@ -1,5 +1,6 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { mkdtemp, rm, writeFile, mkdir } from "node:fs/promises";
+import { createServer, type Server } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -105,6 +106,21 @@ export function launchCli(
       if (child.exitCode === null) child.kill("SIGKILL");
     },
   };
+}
+
+// Hold a port with a TCP server so the CLI sees EADDRINUSE on that port.
+// Resolves only after `listening` fires, so callers can spawn the CLI
+// without racing against the kernel-level bind. Required for port-collision
+// tests: without it, a fast CLI start can grab the port before the blocker
+// has finished binding, masking the test intent.
+export async function blockPort(port: number, host = "127.0.0.1"): Promise<Server> {
+  const server = createServer();
+  await new Promise<void>((res, rej) => {
+    server.once("listening", () => res());
+    server.once("error", rej);
+    server.listen(port, host);
+  });
+  return server;
 }
 
 export async function waitFor<T>(

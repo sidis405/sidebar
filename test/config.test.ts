@@ -15,7 +15,7 @@ import {
   persistConfig,
   persistLocal,
 } from "../src/server/config/index.ts";
-import { destroyWorkspace, launchCli, makeWorkspace, waitFor } from "./helpers.ts";
+import { blockPort, destroyWorkspace, launchCli, makeWorkspace, waitFor } from "./helpers.ts";
 
 // Compact helper: drop a fixture file into the workspace.
 async function write(cwd: string, rel: string, body: string): Promise<void> {
@@ -367,8 +367,7 @@ describe("CLI: persisted port from local.json", () => {
     // The persisted port is an *explicit* user intent, identical to passing
     // --port on the CLI. The spec is firm: no fallback when the explicit port
     // is taken.
-    const { createServer } = await import("node:net");
-    const blocker = createServer().listen(5293, "127.0.0.1");
+    const blocker = await blockPort(5293);
     try {
       await write(cwd, ".sidebar/local.json", JSON.stringify({ version: 1, port: 5293 }));
       const cli = launchCli(cwd, []);

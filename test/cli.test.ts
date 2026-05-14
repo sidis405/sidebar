@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createServer } from "node:net";
 import {
+  blockPort,
   destroyWorkspace,
   launchCli,
   makeWorkspace,
@@ -22,8 +23,7 @@ describe("CLI: port selection", () => {
 
   // AC1: linear fallback through 5180-5189
   it("falls back through 5180-5189 when the first ports are taken", async () => {
-    // Hold 5180 with a dummy server so sidebar must fall back.
-    const blocker = createServer().listen(5180, "127.0.0.1");
+    const blocker = await blockPort(5180);
     try {
       const cli = launchCli(cwd, []);
       try {
@@ -76,7 +76,7 @@ describe("CLI: port selection", () => {
 
   // AC2: explicit port collision refuses with a clear error
   it("--port <N> refuses with a clear error when the port is taken", async () => {
-    const blocker = createServer().listen(5283, "127.0.0.1");
+    const blocker = await blockPort(5283);
     try {
       const cli = launchCli(cwd, ["--port", "5283"]);
       const exit = await new Promise<number | null>((res) => {
