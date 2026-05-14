@@ -8,14 +8,40 @@
 //   3. Literal `human`.
 // Control characters are stripped. `"` is replaced with `'` (markers are
 // inside HTML comments with quoted attributes). Empty after sanitization
-// falls back to `human`.
+// falls back to the next candidate.
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
-import { execSync } from "node:child_process";
+import { mkdtemp, rm } from "node:fs/promises";
+import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { resolveHumanAuthor } from "../src/server/author.ts";
+
+// Host machines running these tests usually have a global git user.name.
+// Point git at empty config files so `git config user.name` only sees what
+// each test sets. `resolveHumanAuthor` runs `git` in-process, so we have to
+// mutate process.env (not just pass env to setup commands).
+const ISOLATED_ENV = {
+  GIT_CONFIG_GLOBAL: "/dev/null",
+  GIT_CONFIG_SYSTEM: "/dev/null",
+  HOME: "/nonexistent-home-for-git-isolation",
+};
+
+function withIsolatedGit<T>(fn: () => T): T {
+  const orig: Record<string, string | undefined> = {};
+  for (const key of Object.keys(ISOLATED_ENV)) {
+    orig[key] = process.env[key];
+    process.env[key] = (ISOLATED_ENV as Record<string, string>)[key];
+  }
+  try {
+    return fn();
+  } finally {
+    for (const [key, value] of Object.entries(orig)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+}
 
 describe("resolveHumanAuthor", () => {
   let cwd: string;
@@ -26,15 +52,21 @@ describe("resolveHumanAuthor", () => {
     await rm(cwd, { recursive: true, force: true });
   });
 
-  function setupGit(name: string) {
-    execSync("git init -q", { cwd });
-    execSync(`git config user.name "${name}"`, { cwd });
-    execSync("git config user.email noone@example.com", { cwd });
+  function setupGit(name: string | null) {
+    execFileSync("git", ["init", "-q"], { cwd, env: { ...process.env, ...ISOLATED_ENV } });
+    if (name !== null) {
+      execFileSync("git", ["config", "user.name", name], {
+        cwd,
+        env: { ...process.env, ...ISOLATED_ENV },
+      });
+    }
   }
 
-  it("returns git config user.name when a .git/ repo is present and the name is non-empty", () => {
+  it("returns git config user.name when .git/ is present and the name is non-empty", () => {
     setupGit("Sidrit T");
-    const author = resolveHumanAuthor(cwd, { USER: "fallback-user" });
+    const author = withIsolatedGit(() =>
+      resolveHumanAuthor(cwd, { USER: "fallback-user" }),
+    );
     expect(author).toBe("Sidrit T");
   });
 
@@ -43,10 +75,11 @@ describe("resolveHumanAuthor", () => {
     expect(author).toBe("fallback-user");
   });
 
-  it("falls back to $USER when git config user.name is empty", async () => {
-    execSync("git init -q", { cwd });
-    // Intentionally do not configure user.name.
-    const author = resolveHumanAuthor(cwd, { USER: "fallback-user" });
+  it("falls back to $USER when git config user.name is unset for this repo", () => {
+    setupGit(null);
+    const author = withIsolatedGit(() =>
+      resolveHumanAuthor(cwd, { USER: "fallback-user" }),
+    );
     expect(author).toBe("fallback-user");
   });
 
@@ -56,21 +89,30 @@ describe("resolveHumanAuthor", () => {
   });
 
   it("strips control characters and replaces double quotes with single quotes", () => {
-    setupGit('A"weird"name');
-    const author = resolveHumanAuthor(cwd, { USER: "fallback-user" });
+    setupGit('A"weird"name');
+    const author = withIsolatedGit(() =>
+      resolveHumanAuthor(cwd, { USER: "fallback-user" }),
+    );
     expect(author).toBe("A'weird'name");
   });
 
-  it("falls back to 'human' when sanitization removes every character", () => {
-    setupGit("");
-    const author = resolveHumanAuthor(cwd, { USER: "fallback-user" });
+  it("falls back to $USER when sanitization removes every character of the git name", () => {
+    setupGit("\x01\x02\x03");
+    const author = withIsolatedGit(() =>
+      resolveHumanAuthor(cwd, { USER: "fallback-user" }),
+    );
     expect(author).toBe("fallback-user");
   });
 
   it("is resolved fresh on each call (mid-session git config changes take effect)", () => {
     setupGit("First Name");
-    expect(resolveHumanAuthor(cwd, {})).toBe("First Name");
-    execSync('git config user.name "Second Name"', { cwd });
-    expect(resolveHumanAuthor(cwd, {})).toBe("Second Name");
+    withIsolatedGit(() => {
+      expect(resolveHumanAuthor(cwd, {})).toBe("First Name");
+      execFileSync("git", ["config", "user.name", "Second Name"], {
+        cwd,
+        env: { ...process.env, ...ISOLATED_ENV },
+      });
+      expect(resolveHumanAuthor(cwd, {})).toBe("Second Name");
+    });
   });
 });

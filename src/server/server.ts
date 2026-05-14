@@ -3,7 +3,8 @@ import { type IncomingMessage, type Server, type ServerResponse, createServer } 
 import { extname, relative, resolve, sep } from "node:path";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { type WebSocket, WebSocketServer } from "ws";
-import type { ClientMessage, ServerMessage } from "../shared/protocol.js";
+import type { ClientMessage, ServerMessage, StatusSnapshot } from "../shared/protocol.js";
+import { resolveHumanAuthor } from "./author.js";
 import { type DirtyBufferTracker, createDirtyBufferTracker } from "./dirty-buffer.js";
 import {
   createFile,
@@ -15,6 +16,15 @@ import {
 } from "./files.js";
 import { log } from "./log.js";
 import { createSidebarMcpServer } from "./mcp-server.js";
+import {
+  type MentionCreatedAtMap,
+  cancelMention,
+  createMention,
+  listMentions,
+  warnOnceForMalformed,
+} from "./mention-ops.js";
+import { type MentionStore, createMentionStore } from "./mention-store.js";
+import type { VerbCatalog } from "./verbs/index.js";
 import { type Workspace, buildTree, startWatcher } from "./workspace.js";
 
 export type ServerHandle = {
@@ -22,6 +32,9 @@ export type ServerHandle = {
   port: number;
   workspace: Workspace;
   dirtyBuffers: DirtyBufferTracker;
+  mentionStore: MentionStore;
+  mentionCreatedAt: MentionCreatedAtMap;
+  verbCatalog: VerbCatalog;
   close: () => Promise<void>;
 };
 
@@ -32,13 +45,26 @@ export type StartOptions = {
   host?: string;
   /** Absolute path to the built SPA, or null when running unbuilt. */
   staticRoot?: string | null;
+  /** Verb catalog assembled from built-ins + custom config. */
+  verbCatalog: VerbCatalog;
 };
 
 export async function startServer(opts: StartOptions): Promise<ServerHandle> {
-  const { workspace } = opts;
+  const { workspace, verbCatalog } = opts;
   const host = opts.host ?? "127.0.0.1";
   const staticRoot = opts.staticRoot ?? null;
   const dirtyBuffers = createDirtyBufferTracker();
+  const mentionStore = createMentionStore();
+  const mentionCreatedAt: MentionCreatedAtMap = new Map();
+  const warnedMalformedFiles = new Set<string>();
+  const mcpDeps = {
+    workspace,
+    dirtyBuffers,
+    mentionStore,
+    mentionCreatedAt,
+    verbCatalog,
+    resolveHumanAuthor: () => resolveHumanAuthor(workspace.root),
+  };
 
   const http = createServer((req, res) => {
     void route(req, res).catch((e) => {
@@ -69,7 +95,7 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
       return;
     }
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
-    const mcp = createSidebarMcpServer({ workspace, dirtyBuffers });
+    const mcp = createSidebarMcpServer(mcpDeps);
     try {
       await mcp.connect(transport);
       await transport.handleRequest(req, res);
@@ -156,7 +182,65 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
         log.warn(`readWorkspaceFile failed for ${relPath}: ${(e as Error).message}`);
       }
     }
+    // A change to a file may have added/removed mention markers; recompute
+    // the status snapshot so the drawer reflects the new world.
+    void broadcastStatus();
   };
+
+  const buildStatusSnapshot = async (): Promise<StatusSnapshot> => {
+    const { mentions, malformedByFile } = await listMentions(workspace, mentionCreatedAt);
+    if (malformedByFile.size > 0) {
+      // One stderr warning per file, only on first observation.
+      const fresh = new Map<string, ReturnType<typeof malformedByFile.get>>();
+      for (const [f, errs] of malformedByFile) {
+        if (!warnedMalformedFiles.has(f)) {
+          warnedMalformedFiles.add(f);
+          fresh.set(f, errs);
+        }
+      }
+      if (fresh.size > 0) {
+        // biome-ignore lint/suspicious/noExplicitAny: shape matches the imported type
+        warnOnceForMalformed(fresh as any);
+      }
+    }
+    const claims = new Map(mentionStore.claims().map((c) => [c.mentionId, c]));
+    return {
+      pendingMentions: mentions.map((m) => {
+        const claim = claims.get(m.id);
+        return {
+          id: m.id,
+          file: m.file,
+          origin: m.origin,
+          verb: m.verb,
+          author: m.author,
+          instruction: m.instruction,
+          orphan: m.orphan,
+          created_at: m.created_at,
+          inProgress: claim ? { agent: claim.agentName, claimedAt: claim.claimedAt } : undefined,
+        };
+      }),
+      connectedAgents: mentionStore.connectedAgents().map((a) => ({
+        name: a.name,
+        connectedAt: a.connectedAt,
+      })),
+      recentEvents: mentionStore.recentEvents().map((e) => ({ ...e })),
+    };
+  };
+
+  const broadcastStatus = async (): Promise<void> => {
+    try {
+      const snapshot = await buildStatusSnapshot();
+      broadcast({ kind: "status", snapshot });
+    } catch (e) {
+      log.warn(`status broadcast failed: ${(e as Error).message}`);
+    }
+  };
+
+  // Anything that changes the mention store (claim, release, event) should
+  // push a fresh status snapshot to subscribed editor tabs.
+  mentionStore.onChange(() => {
+    void broadcastStatus();
+  });
 
   const watcher = startWatcher(
     workspace,
@@ -193,7 +277,15 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
         if (msg.isDirty) myDirty.add(msg.path);
         else myDirty.delete(msg.path);
       }
-      void handleMessage(msg, ws, workspace, refreshTree, dirtyBuffers).catch((e) => {
+      void handleMessage(msg, ws, {
+        workspace,
+        refreshTree,
+        dirtyBuffers,
+        mentionStore,
+        mentionCreatedAt,
+        verbCatalog,
+        broadcastStatus,
+      }).catch((e) => {
         try {
           ws.send(
             JSON.stringify({
@@ -233,6 +325,9 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
     port,
     workspace,
     dirtyBuffers,
+    mentionStore,
+    mentionCreatedAt,
+    verbCatalog,
     close: async () => {
       // Terminate live WebSocket clients before closing the HTTP server, or
       // http.close() will wait for the existing upgraded sockets to drain on
@@ -270,13 +365,30 @@ async function listen(server: Server, port: number, host: string): Promise<numbe
   });
 }
 
+type HandlerDeps = {
+  workspace: Workspace;
+  refreshTree: () => Promise<void>;
+  dirtyBuffers: DirtyBufferTracker;
+  mentionStore: MentionStore;
+  mentionCreatedAt: MentionCreatedAtMap;
+  verbCatalog: VerbCatalog;
+  broadcastStatus: () => Promise<void>;
+};
+
 async function handleMessage(
   msg: ClientMessage,
   ws: WebSocket,
-  workspace: Workspace,
-  refreshTree: () => Promise<void>,
-  dirtyBuffers: DirtyBufferTracker,
+  deps: HandlerDeps,
 ): Promise<void> {
+  const {
+    workspace,
+    refreshTree,
+    dirtyBuffers,
+    mentionStore,
+    mentionCreatedAt,
+    verbCatalog,
+    broadcastStatus,
+  } = deps;
   const send = (m: ServerMessage) => ws.send(JSON.stringify(m));
   switch (msg.kind) {
     case "hello":
@@ -350,6 +462,108 @@ async function handleMessage(
         send({ kind: "error", message: "delete failed", cause: (e as Error).message });
       }
       return;
+    case "verbCatalog": {
+      const snapshot = {
+        human: Array.from(verbCatalog.human.values()).map((v) => ({
+          name: v.name,
+          kind: v.mode === "replace" ? ("human-replace" as const) : ("human-annotation" as const),
+          builtin: v.builtin,
+        })),
+        agent: Array.from(verbCatalog.agent.values()).map((v) => ({
+          name: v.name,
+          kind: "agent" as const,
+          builtin: v.builtin,
+        })),
+      };
+      send({ kind: "verbCatalog", catalog: snapshot });
+      return;
+    }
+    case "statusRequest":
+      // Push the latest snapshot just to this caller.
+      await broadcastStatus();
+      return;
+    case "createMention":
+      try {
+        const author = resolveHumanAuthor(workspace.root);
+        const result = await createMention(workspace, {
+          path: msg.path,
+          startOffset: msg.startOffset,
+          endOffset: msg.endOffset,
+          verb: msg.verb,
+          instruction: msg.instruction,
+          author,
+        });
+        // Eagerly track creation timestamp so the next status snapshot
+        // already carries the fresh mention.
+        mentionCreatedAt.set(result.mention.id, new Date().toISOString());
+        mentionStore.recordEvent({
+          kind: "mention-created",
+          mention_id: result.mention.id,
+          file: msg.path,
+          verb: msg.verb,
+          origin: "human",
+          author,
+          at: new Date().toISOString(),
+        });
+        send({ kind: "mentionCreated", mentionId: result.mention.id, file: msg.path });
+        await broadcastStatus();
+      } catch (e) {
+        send({
+          kind: "error",
+          message: "createMention failed",
+          cause: (e as Error).message,
+        });
+      }
+      return;
+    case "cancelMention":
+      try {
+        const outcome = await cancelMention(workspace, msg.mentionId, mentionCreatedAt);
+        if (outcome.kind === "not-found") {
+          send({
+            kind: "error",
+            message: "cancelMention failed",
+            cause: `no open mention with id ${msg.mentionId}`,
+          });
+          return;
+        }
+        mentionStore.release(msg.mentionId);
+        mentionCreatedAt.delete(msg.mentionId);
+        mentionStore.recordEvent({
+          kind: "mention-cancelled",
+          mention_id: msg.mentionId,
+          file: outcome.file,
+          at: new Date().toISOString(),
+        });
+        await broadcastStatus();
+      } catch (e) {
+        send({
+          kind: "error",
+          message: "cancelMention failed",
+          cause: (e as Error).message,
+        });
+      }
+      return;
+    case "releaseClaim": {
+      const released = mentionStore.release(msg.mentionId);
+      if (!released) {
+        send({
+          kind: "error",
+          message: "releaseClaim failed",
+          cause: `mention ${msg.mentionId} is not claimed`,
+        });
+        return;
+      }
+      mentionStore.recordEvent({
+        kind: "mention-released",
+        mention_id: msg.mentionId,
+        file: "",
+        agent: released.agentName,
+        reason: "manual release from status drawer",
+        at: new Date().toISOString(),
+      });
+      await broadcastStatus();
+      return;
+    }
   }
 }
 

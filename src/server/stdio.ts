@@ -3,6 +3,7 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
+import { resolveHumanAuthor } from "./author.js";
 import {
   type ConnectionInfo,
   probeConnectionFile,
@@ -70,13 +71,33 @@ async function bootPrimary(opts: StdioBootOptions): Promise<StdioBootResult> {
   const mcp = createSidebarMcpServer({
     workspace: handle.workspace,
     dirtyBuffers: handle.dirtyBuffers,
+    mentionStore: handle.mentionStore,
+    mentionCreatedAt: handle.mentionCreatedAt,
+    verbCatalog: handle.verbCatalog,
+    resolveHumanAuthor: () => resolveHumanAuthor(handle.workspace.root),
   });
   await mcp.connect(transport);
+  // Register the agent for the status drawer once clientInfo is available
+  // (post-initialize). Slice 7 polishes the per-client identity story; this
+  // slice just needs the drawer to show "one agent connected". The collision
+  // suffix logic in mentionStore.registerAgent dedupes concurrent connections.
+  let unregister: () => void = () => {};
+  setImmediate(() => {
+    // biome-ignore lint/suspicious/noExplicitAny: SDK shape
+    const ci = (mcp as any).server?.getClientVersion?.();
+    const name = ci?.name && typeof ci.name === "string" ? ci.name : "agent";
+    unregister = handle.mentionStore.registerAgent(name);
+  });
 
   let shuttingDown = false;
   const shutdown = async (): Promise<void> => {
     if (shuttingDown) return;
     shuttingDown = true;
+    try {
+      unregister();
+    } catch {
+      /* noop */
+    }
     try {
       await transport.close();
     } catch {
@@ -97,6 +118,11 @@ async function bootPrimary(opts: StdioBootOptions): Promise<StdioBootResult> {
 
   const done = new Promise<void>((resolve) => {
     transport.onclose = () => {
+      try {
+        unregister();
+      } catch {
+        /* noop */
+      }
       // The spawning agent disconnected its stdio. The primary process keeps
       // running so the editor stays alive (and additional agents can attach
       // via HTTP). The lifecycle owner is the user's Ctrl-C, not the agent.
