@@ -7,8 +7,12 @@ import { setTimeout as delay } from "node:timers/promises";
 
 const here = fileURLToPath(new URL(".", import.meta.url));
 export const REPO_ROOT = resolve(here, "..");
-export const CLI_ENTRY = resolve(REPO_ROOT, "src/server/cli.ts");
-export const TSX_BIN = resolve(REPO_ROOT, "node_modules/.bin/tsx");
+// Tests spawn the compiled CLI (built once via the vitest globalSetup) so each
+// invocation skips the per-spawn tsx cold-start. `CLI_ENTRY` and `TSX_BIN`
+// keep their original names so the rest of the suite is untouched; only the
+// values change.
+export const CLI_ENTRY = resolve(REPO_ROOT, "dist/server/cli.js");
+export const TSX_BIN = process.execPath;
 
 export type LaunchedCli = {
   child: ChildProcess;
