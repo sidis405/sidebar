@@ -11,10 +11,10 @@ Implement only the acceptance criteria of the issue you are working on. Do not s
 Before writing code:
 
 1. Re-read `CONTEXT.md` (the project glossary). Use exact terms from it in identifiers, comments, file names, commit messages, and PR text. Do not invent synonyms. The glossary is load-bearing across slices; vocabulary drift in one slice infects every slice after it.
-2. Read every ADR in `docs/adr/`, especially the ones linked from the issue's "Spec references" section. ADRs settle decisions. If your implementation would contradict an ADR, stop and post on the issue rather than improvising.
+2. Read every ADR in `docs/decisions/`, especially the ones linked from the issue's "Spec references" section. ADRs settle decisions. If your implementation would contradict an ADR, stop and post on the issue rather than improvising.
 3. Read the spec sections referenced in the issue.
 
-The tech stack is locked by [ADR-0008](docs/adr/0008-typescript-monorepo-stack.md). Use the tools it names. Do not introduce a different language, framework, test runner, or formatter without a superseding ADR.
+The tech stack is locked by [ADR-0008](docs/decisions/0008-typescript-monorepo-stack.md). Use the tools it names. Do not introduce a different language, framework, test runner, or formatter without a superseding ADR.
 
 ## Test-first contract
 
@@ -32,9 +32,9 @@ Tests prove correctness in isolation. The demo proves the slice works end to end
 
 ## QA documentation
 
-Every slice ships a `docs/qa/slice-NN.md` file authored from `docs/qa/_template.md`. The QA doc is the single artifact a reviewer (or future maintainer) opens to learn how to validate the slice, replay the demo, and re-run the human checks that automated tests cannot cover.
+Sidebar keeps one QA document at `docs/qa/README.md`. It is a user-perspective capabilities catalogue organized by feature, not by release. Every slice that adds, changes, or removes a user-visible capability updates that file in the same PR.
 
-The QA doc is committed in the same PR as the slice. It is not a substitute for tests or for the demo evidence; it is the connective tissue that explains, in one place, how to exercise everything the slice ships. PRs that change behavior in an already-merged slice update that slice's QA doc in the same commit.
+The QA doc is not a per-slice verification script and not a test replay. Automated tests cover correctness; the PR description covers what changed; the QA doc covers what the system lets a user do at this commit. New features land as new sections (or as additions to an existing section); features that change get edited in place; features that go away get removed.
 
 ## Branch and PR convention
 
