@@ -157,8 +157,15 @@ export function StatusDrawer({
                     <li key={e.id} className="status-list-item">
                       <code className="status-kind">{e.kind}</code>
                       {e.mention_id && <code className="status-id">{e.mention_id}</code>}
+                      {e.annotation_id && <code className="status-id">{e.annotation_id}</code>}
+                      {e.annotation_type && (
+                        <span className="status-verb">{e.annotation_type}</span>
+                      )}
                       {e.file && <span className="status-file">{e.file}</span>}
                       {e.agent && <span className="status-agent-name">{e.agent}</span>}
+                      {e.author && !e.agent && (
+                        <span className="status-agent-name">{e.author}</span>
+                      )}
                       <span className="status-time">{new Date(e.at).toLocaleTimeString()}</span>
                     </li>
                   ))}

@@ -50,11 +50,22 @@ export type Mention = ParsedMarker & {
   baseHash: string;
 };
 
-export type ParseErrorKind =
-  | "missing-end"
-  | "stray-end"
-  | "duplicate-id"
-  | "malformed-syntax";
+/**
+ * An annotation is the same begin/end-pair shape as a mention but its
+ * `type` is `note` or `suggestion` instead of `mention`. The `instruction`
+ * slot of the begin marker carries the annotation's freeform markdown content
+ * (with newlines/control chars encoded so the marker stays on one line); the
+ * region between begin and end is the target prose the annotation is
+ * attached to. See spec / Marker Shape on Disk and ADR-0003.
+ */
+export type Annotation = ParsedMarker & {
+  type: "note" | "suggestion";
+  author: string;
+  /** Markdown body, with newline escapes decoded from `instruction`. */
+  content: string;
+};
+
+export type ParseErrorKind = "missing-end" | "stray-end" | "duplicate-id" | "malformed-syntax";
 
 export type ParseError = {
   kind: ParseErrorKind;
@@ -78,6 +89,8 @@ export type ParseResult = {
   markers: ParsedMarker[];
   /** Convenience filter: well-formed mentions only. */
   mentions: Mention[];
+  /** Convenience filter: well-formed annotations (note + suggestion). */
+  annotations: Annotation[];
   errors: ParseError[];
   malformedRanges: MalformedRange[];
 };
@@ -282,12 +295,30 @@ export function parseMarkers(text: string): ParseResult {
     });
   }
 
+  const annotations: Annotation[] = [];
+  for (const m of completedOrder) {
+    if (m.type !== "note" && m.type !== "suggestion") continue;
+    const author = m.attrs.author ?? "";
+    annotations.push({
+      ...m,
+      type: m.type,
+      author,
+      content: decodeAnnotationContent(m.instruction),
+    });
+  }
+
   return {
     markers: completedOrder,
     mentions,
+    annotations,
     errors,
     malformedRanges,
   };
+}
+
+/** Thin wrapper for callers that only care about annotations. */
+export function parseAnnotations(text: string): Annotation[] {
+  return parseMarkers(text).annotations;
 }
 
 // ---------------------------------------------------------------------------
@@ -323,17 +354,24 @@ export function formatMentionEnd(id: string): string {
   return `<!-- @sidebar end id="${id}" -->`;
 }
 
-// Annotation emit helpers used by resolve_mention(action=annotation) and by
-// slice 5 once it lands. The note/suggestion variants share the same begin/end
-// pair shape (ADR-0003); the only difference is the type token.
+// Annotation emit helpers. The note/suggestion variants share the same
+// begin/end pair shape (ADR-0003); the only difference is the type token.
+// Annotation `content` is markdown and may include newlines or any control
+// characters that aren't valid inside a single-line HTML comment, so we
+// encode it before emission and decode it on parse. The mention path uses
+// `formatMentionBegin` with `sanitizeInstruction`, which strips control
+// characters by design (mention instructions are single-line prompts); the
+// annotation path uses `encodeAnnotationContent` so multi-paragraph
+// suggestions and notes survive the disk round-trip.
 export function formatAnnotationBegin(args: {
   type: "note" | "suggestion";
   id: string;
   author: string;
+  /** Annotation body. Multi-line markdown is supported; encoded on emit. */
   instruction: string;
 }): string {
   const author = sanitizeAttribute(args.author);
-  const instruction = sanitizeInstruction(args.instruction);
+  const instruction = encodeAnnotationContent(args.instruction);
   return `<!-- @sidebar ${args.type} id="${args.id}" author="${author}": ${instruction} -->`;
 }
 
@@ -357,6 +395,61 @@ export function sanitizeAttribute(v: string): string {
  */
 export function sanitizeInstruction(v: string): string {
   return sanitizeAttribute(v).replace(/-->/g, "--&gt;");
+}
+
+/**
+ * Encode an annotation's markdown content into a single-line form safe to
+ * place inside the begin marker's `{instruction}` slot. Order matters: the
+ * backslash escape runs first so the newline/return escapes that follow
+ * don't get double-escaped on decode.
+ *
+ * Backslash, newline, and carriage-return become two-character escape
+ * sequences. Tabs are preserved (they survive in HTML comments and read fine
+ * inside markdown). Other control characters are dropped. The `"` to `'`
+ * substitution and the `-->` neutering match sanitizeInstruction so the
+ * marker's HTML comment quoting never gets broken.
+ */
+export function encodeAnnotationContent(v: string): string {
+  return (
+    v
+      .replace(/\\/g, "\\\\")
+      .replace(/\n/g, "\\n")
+      .replace(/\r/g, "\\r")
+      // biome-ignore lint/suspicious/noControlCharactersInRegex: deliberate scrubber
+      .replace(/[\x00-\x08\x0b-\x1f\x7f]/g, "")
+      .replace(/"/g, "'")
+      .replace(/-->/g, "--&gt;")
+  );
+}
+
+/**
+ * Reverse of {@link encodeAnnotationContent}. The decoder walks the string
+ * once so a literal `\\\\n` decodes to `\\n` (backslash plus n), not to a
+ * newline.
+ */
+export function decodeAnnotationContent(v: string): string {
+  let out = "";
+  for (let i = 0; i < v.length; i++) {
+    const ch = v[i];
+    if (ch !== "\\" || i + 1 >= v.length) {
+      out += ch;
+      continue;
+    }
+    const next = v[i + 1];
+    if (next === "n") {
+      out += "\n";
+      i++;
+    } else if (next === "r") {
+      out += "\r";
+      i++;
+    } else if (next === "\\") {
+      out += "\\";
+      i++;
+    } else {
+      out += ch;
+    }
+  }
+  return out.replace(/--&gt;/g, "-->");
 }
 
 // ---------------------------------------------------------------------------

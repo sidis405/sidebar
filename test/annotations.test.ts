@@ -118,10 +118,7 @@ describe("parseMarkers: annotation shapes", () => {
 
   it("reports a stray-end error for an unmatched note end marker", async () => {
     const { parseMarkers } = await import("../src/shared/markers.ts");
-    const text = [
-      '<!-- @sidebar end id="n-lost" -->',
-      "",
-    ].join("\n");
+    const text = ['<!-- @sidebar end id="n-lost" -->', ""].join("\n");
     const result = parseMarkers(text);
     expect(result.errors.some((e) => e.kind === "stray-end" && e.id === "n-lost")).toBe(true);
   });
@@ -228,9 +225,8 @@ describe("MCP: add_annotation + list_annotations", () => {
 
   it("list_annotations returns every annotation with the spec shape", async () => {
     stdio = await connectStdio(cwd, "claude-code");
-    const original = await readFile(join(cwd, "docs", "alpha.md"), "utf8");
-    const s1 = original.indexOf("paragraph one\n");
-    const s2 = original.indexOf("paragraph two\n");
+    const before1 = await readFile(join(cwd, "docs", "alpha.md"), "utf8");
+    const s1 = before1.indexOf("paragraph one\n");
     await stdio.client.callTool({
       name: "add_annotation",
       arguments: {
@@ -240,6 +236,9 @@ describe("MCP: add_annotation + list_annotations", () => {
         content: "n1",
       },
     });
+    // Re-read to pick up the post-insert offset for paragraph two.
+    const before2 = await readFile(join(cwd, "docs", "alpha.md"), "utf8");
+    const s2 = before2.indexOf("paragraph two\n");
     await stdio.client.callTool({
       name: "add_annotation",
       arguments: {
@@ -313,8 +312,9 @@ describe("MCP: add_annotation + list_annotations", () => {
     });
     const created = payloadOf<{ id: string }>(result);
     const list = await stdio.client.callTool({ name: "list_annotations", arguments: {} });
-    const annotations = payloadOf<{ annotations: Array<{ id: string; content: string }> }>(list)
-      .annotations;
+    const annotations = payloadOf<{ annotations: Array<{ id: string; content: string }> }>(
+      list,
+    ).annotations;
     const back = annotations.find((a) => a.id === created.id);
     expect(back?.content).toBe(body);
   });
@@ -540,7 +540,12 @@ describe("MCP: list_recent_changes new annotation event kinds", () => {
         arguments: {},
       });
       const events = payloadOf<{
-        events: Array<{ kind: string; annotation_id?: string; author?: string; type?: string }>;
+        events: Array<{
+          kind: string;
+          annotation_id?: string;
+          author?: string;
+          annotation_type?: string;
+        }>;
       }>(recent).events;
       const kinds = events.map((e) => e.kind);
       expect(kinds).toContain("annotation-created");
@@ -548,7 +553,7 @@ describe("MCP: list_recent_changes new annotation event kinds", () => {
       const createEvent = events.find((e) => e.kind === "annotation-created");
       expect(createEvent?.annotation_id).toBe(noteId);
       expect(createEvent?.author).toBe("claude-code");
-      expect(createEvent?.type).toBe("note");
+      expect(createEvent?.annotation_type).toBe("note");
     } finally {
       await stdio.close();
     }
@@ -564,9 +569,7 @@ describe("MCP: list_recent_changes new annotation event kinds", () => {
 
 type WsClient = {
   send: (m: ClientMessage) => void;
-  next: <K extends ServerMessage["kind"]>(
-    kind: K,
-  ) => Promise<Extract<ServerMessage, { kind: K }>>;
+  next: <K extends ServerMessage["kind"]>(kind: K) => Promise<Extract<ServerMessage, { kind: K }>>;
   close: () => void;
 };
 

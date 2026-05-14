@@ -1,6 +1,13 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import fastGlob from "fast-glob";
 import { z } from "zod";
+import {
+  type AnnotationCreatedAtMap,
+  addAnnotation,
+  listAnnotations,
+  removeAnnotation,
+  updateAnnotation,
+} from "./annotation-ops.js";
 import type { DirtyBufferTracker } from "./dirty-buffer.js";
 import { readWorkspaceFile } from "./files.js";
 import {
@@ -54,13 +61,22 @@ export type McpServerDeps = {
   /** Persistent map from mention id -> ISO creation timestamp. Shared
    *  across requests so created_at survives re-scans. */
   mentionCreatedAt: MentionCreatedAtMap;
+  /** Persistent map from annotation id -> ISO creation timestamp. */
+  annotationCreatedAt: AnnotationCreatedAtMap;
   verbCatalog: VerbCatalog;
   /** Resolved on each call so mid-session git config edits take effect. */
   resolveHumanAuthor: () => string;
 };
 
 export function createSidebarMcpServer(deps: McpServerDeps): McpServer {
-  const { workspace, dirtyBuffers, mentionStore, mentionCreatedAt, verbCatalog } = deps;
+  const {
+    workspace,
+    dirtyBuffers,
+    mentionStore,
+    mentionCreatedAt,
+    annotationCreatedAt,
+    verbCatalog,
+  } = deps;
   void deps.resolveHumanAuthor; // reserved for agent-origin mention path (slice 6)
 
   const server = new McpServer(
@@ -224,13 +240,15 @@ export function createSidebarMcpServer(deps: McpServerDeps): McpServer {
       }),
       z.object({
         type: z.literal("annotation"),
-        annotation_type: z.literal("note"),
+        annotation_type: z.enum(["note", "suggestion"]),
         text: z.string(),
       }),
     ])
     .describe(
       "{ type: 'replace', content }: overwrite the target region inline (markers go too). " +
-        "{ type: 'annotation', annotation_type: 'note', text }: leave a note next to the target.",
+        "{ type: 'annotation', annotation_type: 'note', text }: leave a note next to the target. " +
+        "annotation_type: 'suggestion' is rejected here; the agent's path to proposing prose " +
+        "edits is add_annotation(type='suggestion'), which the human accepts or rejects.",
     );
 
   server.registerTool(
@@ -249,6 +267,17 @@ export function createSidebarMcpServer(deps: McpServerDeps): McpServer {
       },
     },
     async ({ mention_id, base_hash, action }) => {
+      // Slice 5: the suggestion path lives on add_annotation. Refuse it here
+      // so the agent can't smuggle a prose-replacement proposal through the
+      // mention lifecycle (which would skip human accept/reject).
+      if (action.type === "annotation" && action.annotation_type === "suggestion") {
+        return errorResult(
+          "resolve_mention: action.annotation_type='suggestion' is not allowed. " +
+            "To propose a prose edit, call add_annotation(type='suggestion'); the human " +
+            "accepts or rejects via the editor's side card.",
+        );
+      }
+
       const m = await findMention(workspace, mention_id, mentionCreatedAt);
       if (!m) return errorResult(`resolve_mention: no open mention with id ${mention_id}`);
 
@@ -345,6 +374,174 @@ export function createSidebarMcpServer(deps: McpServerDeps): McpServer {
             text: JSON.stringify({ ok: true, mention_id, reason }),
           },
         ],
+      };
+    },
+  );
+
+  // -------------------------------------------------------------------------
+  // Annotation tools (slice 5)
+  // -------------------------------------------------------------------------
+
+  const targetAnchorSchema = z
+    .object({ start: z.number().int().min(0), end: z.number().int().min(0) })
+    .describe("Character offsets in the file marking the target region.");
+
+  server.registerTool(
+    "list_annotations",
+    {
+      description:
+        "List every annotation (note + suggestion) across the workspace, or in one file " +
+        "when `path` is given. Each entry has id, file, type, author, target_content, " +
+        "content, target_anchor (start/end char offsets), and created_at.",
+      inputSchema: {
+        path: z.string().min(1).optional(),
+      },
+    },
+    async ({ path }) => {
+      const list = await listAnnotations(workspace, annotationCreatedAt, { path });
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              annotations: list.map((a) => ({
+                id: a.id,
+                file: a.file,
+                type: a.type,
+                author: a.author,
+                target_content: a.targetContent,
+                content: a.content,
+                target_anchor: { start: a.targetStart, end: a.targetEnd },
+                created_at: a.created_at,
+              })),
+            }),
+          },
+        ],
+      };
+    },
+  );
+
+  server.registerTool(
+    "add_annotation",
+    {
+      description:
+        "Create a new annotation. type='note' is pure information; type='suggestion' proposes " +
+        "replacement text the human accepts or rejects via the editor side card. author is set " +
+        "from the connecting MCP client's identity (clientInfo.name with collision suffix when " +
+        "multiple clients share a name).",
+      inputSchema: {
+        path: z.string().min(1),
+        target_anchor: targetAnchorSchema,
+        type: z.enum(["note", "suggestion"]),
+        content: z.string(),
+      },
+    },
+    async ({ path, target_anchor, type, content }) => {
+      try {
+        const author = clientNameOf(server) ?? "agent";
+        const result = await addAnnotation(workspace, {
+          path,
+          target_anchor,
+          type,
+          content,
+          author,
+        });
+        annotationCreatedAt.set(result.annotation.id, new Date().toISOString());
+        mentionStore.recordEvent({
+          kind: "annotation-created",
+          annotation_id: result.annotation.id,
+          file: path,
+          annotation_type: type,
+          author,
+          at: new Date().toISOString(),
+        });
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({
+                id: result.annotation.id,
+                file: result.annotation.file,
+                type: result.annotation.type,
+                author: result.annotation.author,
+                target_anchor: result.annotation.target_anchor,
+              }),
+            },
+          ],
+        };
+      } catch (e) {
+        return errorResult(`add_annotation failed: ${(e as Error).message}`);
+      }
+    },
+  );
+
+  server.registerTool(
+    "update_annotation",
+    {
+      description:
+        "Replace the content of an annotation. The agent can only update annotations whose " +
+        "author matches its own client identity.",
+      inputSchema: {
+        id: z.string().min(1),
+        content: z.string(),
+      },
+    },
+    async ({ id, content }) => {
+      const author = clientNameOf(server) ?? "agent";
+      const result = await updateAnnotation(workspace, id, content, {
+        requireAuthor: author,
+        firstSeenAt: annotationCreatedAt,
+      });
+      if (result.kind === "not-found") {
+        return errorResult(`update_annotation: no annotation with id ${id}`);
+      }
+      if (result.kind === "forbidden") {
+        return errorResult(
+          `update_annotation: annotation ${id} was authored by ${result.author}; ` +
+            `you can only update annotations you authored (current identity: ${author}).`,
+        );
+      }
+      return {
+        content: [{ type: "text", text: JSON.stringify({ ok: true, id, file: result.file }) }],
+      };
+    },
+  );
+
+  server.registerTool(
+    "remove_annotation",
+    {
+      description:
+        "Remove an annotation. Strips the begin/end pair; the target prose stays. The agent " +
+        "can only remove annotations whose author matches its own client identity.",
+      inputSchema: {
+        id: z.string().min(1),
+      },
+    },
+    async ({ id }) => {
+      const author = clientNameOf(server) ?? "agent";
+      const result = await removeAnnotation(workspace, id, {
+        requireAuthor: author,
+        firstSeenAt: annotationCreatedAt,
+      });
+      if (result.kind === "not-found") {
+        return errorResult(`remove_annotation: no annotation with id ${id}`);
+      }
+      if (result.kind === "forbidden") {
+        return errorResult(
+          `remove_annotation: annotation ${id} was authored by ${result.author}; ` +
+            `you can only remove annotations you authored (current identity: ${author}).`,
+        );
+      }
+      mentionStore.recordEvent({
+        kind: "annotation-removed",
+        annotation_id: id,
+        file: result.file,
+        annotation_type: result.type,
+        author,
+        at: new Date().toISOString(),
+      });
+      return {
+        content: [{ type: "text", text: JSON.stringify({ ok: true, id, file: result.file }) }],
       };
     },
   );

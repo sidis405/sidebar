@@ -5,7 +5,8 @@ import type {
   TreeNode,
   VerbCatalogSnapshot,
 } from "../shared/protocol.ts";
-import { CmdK, type CmdKAnchor } from "./CmdK.tsx";
+import { AnnotationCards } from "./AnnotationCards.tsx";
+import { CmdK, type CmdKAnchor, type CmdKSubmit } from "./CmdK.tsx";
 import { ConflictModal, type ConflictPayload } from "./ConflictModal.tsx";
 import { Editor } from "./Editor.tsx";
 import { FileTree } from "./FileTree.tsx";
@@ -135,6 +136,9 @@ export function App() {
           // refreshes naturally.
           setCmdk(null);
           return;
+        case "annotationCreated":
+          setCmdk(null);
+          return;
         case "error":
           console.error("[sidebar] server error:", msg.message, msg.cause ?? "");
           return;
@@ -213,16 +217,27 @@ export function App() {
   );
 
   const submitCmdK = useCallback(
-    (verb: string, instruction: string) => {
+    (payload: CmdKSubmit) => {
       if (!open || !cmdk) return;
-      ws.send({
-        kind: "createMention",
-        path: open.path,
-        startOffset: cmdk.startOffset,
-        endOffset: cmdk.endOffset,
-        verb,
-        instruction,
-      });
+      if (payload.mode === "mention") {
+        ws.send({
+          kind: "createMention",
+          path: open.path,
+          startOffset: cmdk.startOffset,
+          endOffset: cmdk.endOffset,
+          verb: payload.verb,
+          instruction: payload.instruction,
+        });
+      } else {
+        ws.send({
+          kind: "createAnnotation",
+          path: open.path,
+          startOffset: cmdk.startOffset,
+          endOffset: cmdk.endOffset,
+          type: payload.mode,
+          content: payload.content,
+        });
+      }
     },
     [ws, open, cmdk],
   );
@@ -233,6 +248,18 @@ export function App() {
   );
   const releaseClaim = useCallback(
     (id: string) => ws.send({ kind: "releaseClaim", mentionId: id }),
+    [ws],
+  );
+  const acceptSuggestion = useCallback(
+    (id: string) => ws.send({ kind: "acceptSuggestion", annotationId: id }),
+    [ws],
+  );
+  const rejectSuggestion = useCallback(
+    (id: string) => ws.send({ kind: "rejectSuggestion", annotationId: id }),
+    [ws],
+  );
+  const removeAnnotation = useCallback(
+    (id: string) => ws.send({ kind: "removeAnnotation", annotationId: id }),
     [ws],
   );
 
@@ -266,12 +293,21 @@ export function App() {
           </span>
         </header>
         {open ? (
-          <Editor
-            value={open.buffer}
-            onChange={(v) => setOpen((prev) => (prev ? { ...prev, buffer: v } : prev))}
-            onSaveRequest={handleSave}
-            onCmdK={handleCmdK}
-          />
+          <div className="editor-with-cards">
+            <Editor
+              value={open.buffer}
+              onChange={(v) => setOpen((prev) => (prev ? { ...prev, buffer: v } : prev))}
+              onSaveRequest={handleSave}
+              onCmdK={handleCmdK}
+            />
+            <AnnotationCards
+              source={open.diskContent}
+              file={open.path}
+              onAccept={acceptSuggestion}
+              onReject={rejectSuggestion}
+              onRemove={removeAnnotation}
+            />
+          </div>
         ) : (
           <div className="empty-state">
             <p>select a markdown file from the tree to open it.</p>

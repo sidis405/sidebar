@@ -48,6 +48,8 @@ export type RecentEventView = {
   kind: string;
   at: string;
   mention_id?: string;
+  annotation_id?: string;
+  annotation_type?: "note" | "suggestion";
   file?: string;
   agent?: string;
   author?: string;
@@ -87,6 +89,21 @@ export type ClientMessage =
       verb: string;
       instruction: string;
     }
+  /** Cmd-K annotation creation (slice 5, note + suggestion modes). */
+  | {
+      kind: "createAnnotation";
+      path: string;
+      startOffset: number;
+      endOffset: number;
+      type: "note" | "suggestion";
+      content: string;
+    }
+  /** Side-card Accept button: swap target prose with the suggestion content. */
+  | { kind: "acceptSuggestion"; annotationId: string }
+  /** Side-card Reject button: remove the suggestion annotation. */
+  | { kind: "rejectSuggestion"; annotationId: string }
+  /** Side-card remove button on a note (slice 5). */
+  | { kind: "removeAnnotation"; annotationId: string }
   /** Status drawer right-click "cancel mention". */
   | { kind: "cancelMention"; mentionId: string }
   /** Status drawer right-click "release stuck claim". */
@@ -110,6 +127,12 @@ export type ServerMessage =
       kind: "mentionCreated";
       mentionId: string;
       file: string;
+    }
+  | {
+      kind: "annotationCreated";
+      annotationId: string;
+      file: string;
+      type: "note" | "suggestion";
     }
   | { kind: "status"; snapshot: StatusSnapshot }
   | { kind: "error"; message: string; cause?: string };

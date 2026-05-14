@@ -377,3 +377,95 @@ body {
 }
 .modal footer button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
 .modal footer button.link { background: transparent; border-color: transparent; color: var(--muted); }
+
+/* Slice 5: annotation side cards + Cmd-K mode toggle. */
+.editor-pane main, .editor-with-cards {
+  display: flex;
+  flex-direction: row;
+  flex: 1;
+  overflow: hidden;
+  height: 100%;
+  min-height: 0;
+}
+.editor-with-cards .cm-host { flex: 1; min-width: 0; }
+
+.annotation-cards {
+  width: 280px;
+  border-left: 1px solid var(--border);
+  background: var(--sidebar-bg);
+  overflow-y: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.annotation-cards.is-empty { padding: 0; width: 0; border-left: 0; }
+
+.annotation-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  padding: 8px 10px;
+  font-size: 12px;
+}
+.annotation-card-suggestion { border-color: var(--accent); }
+.annotation-card-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.annotation-card-id {
+  font-family: ui-monospace, Menlo, monospace;
+  background: var(--row-hover);
+  padding: 1px 4px;
+  border-radius: 3px;
+  color: var(--fg);
+}
+.annotation-card-type { text-transform: uppercase; letter-spacing: 0.05em; color: var(--fg); font-weight: 600; }
+.annotation-card-anchor { margin-left: auto; }
+.annotation-card-body {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--sidebar-bg);
+  margin-bottom: 6px;
+  max-height: 180px;
+  overflow-y: auto;
+}
+.annotation-card-body .cm-editor { font-size: 12px; }
+.annotation-card-footer {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+}
+.annotation-card-footer button {
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  cursor: pointer;
+}
+.annotation-card-accept { border-color: var(--accent) !important; background: var(--accent) !important; color: #fff !important; }
+.annotation-card-reject, .annotation-card-remove { color: var(--muted); }
+
+/* Cmd-K mode toggle row. */
+.cmdk-mode-row {
+  display: flex;
+  gap: 4px;
+  padding: 8px 10px 0;
+}
+.cmdk-mode {
+  padding: 3px 8px;
+  font-size: 11px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  cursor: pointer;
+  text-transform: capitalize;
+  color: var(--muted);
+}
+.cmdk-mode.is-active { background: var(--accent); border-color: var(--accent); color: #fff; }
