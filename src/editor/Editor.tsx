@@ -1,4 +1,3 @@
-import { useEffect, useRef } from "react";
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import {
@@ -17,7 +16,9 @@ import {
   lineNumbers,
 } from "@codemirror/view";
 import { tags as t } from "@lezer/highlight";
+import { useEffect, useRef } from "react";
 import { markdownLivePreview } from "./markdown-live-preview.ts";
+import { sidebarMarkerDecorations } from "./marker-decorations.ts";
 
 const markdownVisuals = HighlightStyle.define([
   { tag: t.heading1, fontSize: "1.6em", fontWeight: "bold" },
@@ -35,16 +36,23 @@ export type EditorProps = {
   value: string;
   onChange: (v: string) => void;
   onSaveRequest: () => void;
+  onCmdK: (selection: {
+    startOffset: number;
+    endOffset: number;
+    anchor: { top: number; left: number };
+  }) => void;
   readOnly?: boolean;
 };
 
-export function Editor({ value, onChange, onSaveRequest, readOnly }: EditorProps) {
+export function Editor({ value, onChange, onSaveRequest, onCmdK, readOnly }: EditorProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const viewRef = useRef<EditorView | null>(null);
   const onChangeRef = useRef(onChange);
   const onSaveRef = useRef(onSaveRequest);
+  const onCmdKRef = useRef(onCmdK);
   onChangeRef.current = onChange;
   onSaveRef.current = onSaveRequest;
+  onCmdKRef.current = onCmdK;
 
   useEffect(() => {
     if (!hostRef.current) return;
@@ -65,6 +73,20 @@ export function Editor({ value, onChange, onSaveRequest, readOnly }: EditorProps
               return true;
             },
           },
+          {
+            key: "Mod-k",
+            preventDefault: true,
+            run: (view) => {
+              const sel = view.state.selection.main;
+              const coords = view.coordsAtPos(sel.from) ?? { left: 0, top: 0 };
+              onCmdKRef.current({
+                startOffset: sel.from,
+                endOffset: sel.to,
+                anchor: { top: coords.top + 22, left: coords.left },
+              });
+              return true;
+            },
+          },
           ...defaultKeymap,
           ...historyKeymap,
           indentWithTab,
@@ -76,6 +98,7 @@ export function Editor({ value, onChange, onSaveRequest, readOnly }: EditorProps
         syntaxHighlighting(defaultHighlightStyle),
         syntaxHighlighting(markdownVisuals),
         markdownLivePreview,
+        sidebarMarkerDecorations,
         EditorView.lineWrapping,
         EditorState.readOnly.of(!!readOnly),
         EditorView.updateListener.of((u) => {
@@ -104,4 +127,3 @@ export function Editor({ value, onChange, onSaveRequest, readOnly }: EditorProps
 
   return <div className="cm-host" ref={hostRef} />;
 }
-

@@ -34,6 +34,46 @@ Cmd-S saves. Nothing reaches disk until you save, so you can type
 freely and dismiss without consequence. A blue ● next to the filename
 (in the editor header and the file tree) means "unsaved".
 
+Mentions and annotations inside the file appear as dimmed begin/end
+marker lines with a colored verb pill on the begin line. The file's raw
+HTML comments are still on disk (any other markdown tool sees them as
+comments), but the editor treats them as the lifecycle handles for
+agent collaboration described below.
+
+## Ask an agent to act on a region (Cmd-K)
+
+Select the text you want the agent to look at, then press Cmd-K
+(Ctrl-K on Linux/Windows). A small popover anchored to the selection
+pops up:
+
+- start typing a verb to filter the built-in list (`rephrase`, `expand`,
+  `shorten`, `remove-if-redundant` are action verbs that replace the
+  region inline; `factcheck`, `question`, `review`, `explain` are query
+  verbs that leave a note next to the region instead);
+- arrow keys navigate the list, Enter inserts the marker;
+- the optional second field carries a freeform instruction (sent verbatim
+  inside the begin marker so the agent reads your intent);
+- a verb you typed that is not in the list is accepted with a warning.
+  At resolve time it falls back to annotation mode rather than silently
+  rewriting prose.
+
+Submitting writes a `<!-- @sidebar mention ... -->target<!-- @sidebar end -->`
+pair to disk with a short id (`m-a3f9`-style), `origin="human"`, and your
+author name (from `git config user.name` if a `.git/` is present, else
+`$USER`, else the literal `human`). The begin line dims, a verb pill
+appears in the gutter, and the mention shows up in the status drawer on
+the right. Custom verbs from `.sidebar/config.json` show up in the
+autocomplete the same way built-ins do.
+
+If you select an empty region and press Cmd-K, the marker still wraps an
+empty region. The editor flags it as **orphaned** with a red gutter and
+the status drawer shows an "orphan" tag so you can right-click and
+cancel it.
+
+You need the file saved (Cmd-S) before Cmd-K writes anything. The
+popover refuses while a buffer is dirty so the marker is never inserted
+into a stale on-disk version.
+
 ## Manage files from the tree
 
 Right-click any file or folder in the tree for:
@@ -87,6 +127,59 @@ default.
 
 V1 supports Claude Code and Compound's shared `.mcp.json` layout. Cursor,
 Codex, and Aider variants land in V1.1.
+
+## Watch an agent work a mention (status drawer)
+
+The right side of the editor hosts a collapsible **status drawer**. It
+shows everything you need to follow a collaboration without leaving the
+file you're reading:
+
+- **Pending mentions**. Every open mention across the workspace, with
+  id, verb, author, and the file it lives in. Click a row to jump to the
+  file. Right-click to **cancel mention**, which strips the begin/end
+  pair from disk and leaves the target prose alone.
+- **In progress**. Mentions currently claimed by an agent
+  (`mark_in_progress`). Each row shows the claiming agent's name.
+  Right-click any in-progress entry for **release stuck claim**, which
+  drops the claim so another agent (or you) can move on. The marker
+  stays in place.
+- **Connected agents**. Every MCP client connected to this sidebar, with
+  the name they self-declared in their `clientInfo` (Claude Code shows
+  up as `claude-code`, etc.) and when they connected. Multi-agent
+  collision suffixes (`claude-code-2`, ...) show up here when two
+  agents share a name.
+- **Recent activity**. The last 50 lifecycle events, newest first. Every
+  mention create, claim, resolve, release, and cancel is in this log.
+  Agents also poll this view (over MCP, via `list_recent_changes`) so
+  they can react to your edits between turns.
+
+The drawer refreshes live. There's nothing to poll manually.
+
+## How an agent finishes the work
+
+You don't drive this part; the agent does, over MCP. But the surface is
+worth knowing about so you can debug a wedged collaboration:
+
+- `list_pending_mentions` returns every open mention with target content
+  and a short `base_hash` (16 hex chars, derived from sha256 of the
+  target region).
+- `mark_in_progress` claims a mention exclusively. A second agent that
+  tries to claim the same mention gets a conflict error naming the
+  winner.
+- `resolve_mention` echoes the `base_hash` and an action: either
+  `{ type: "replace", content }` (action verbs only; overwrites the
+  begin/end pair plus the target region) or
+  `{ type: "annotation", annotation_type: "note", text }` (works for any
+  verb; turns the mention into a note alongside the original prose).
+  A stale `base_hash` is refused so the agent re-reads via `get_mention`
+  and tries again on the fresh content.
+- `report_error` releases the claim without resolving; the marker stays
+  open for you to retry or cancel.
+
+You can edit the file while a mention is open. The mention persists, and
+the agent works against whatever content the file holds at resolution
+time. If the agent's claim is stale by the time it tries to write, the
+`base_hash` mismatch refuses the write and the agent retries.
 
 ## Attach an extra agent on the fly
 
@@ -144,6 +237,12 @@ Human verbs use `mode: "replace"` (the agent's response replaces the
 target region inline) or `mode: "annotation"` (the agent's response
 becomes a note next to the target). Agent verbs extend the whitelist of
 verbs agents can use when they originate a Mention.
+
+Custom human verbs land in the Cmd-K autocomplete alongside the built-ins
+the next time the editor connects. A custom verb in the catalog is
+respected at resolve time too: a `replace`-mode custom verb authorizes
+the agent's inline rewrite; an `annotation`-mode one downgrades a replace
+request the agent attempts.
 
 The built-in verb tables: see
 [the spec](../specs/sidebar-v1-draft.md#verbs-v1-defaults).

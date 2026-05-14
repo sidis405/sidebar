@@ -1,0 +1,67 @@
+=== slice-04 demo: full mention round-trip ===
+
+[human] wrote docs/alpha.md with a 'rephrase' mention:
+
+  | # alpha
+  | 
+  | <!-- @sidebar mention id="m-aaaa" verb="rephrase" origin="human" author="alice": tighten this -->
+  | the body of the paragraph
+  | with two lines
+  | <!-- @sidebar end id="m-aaaa" -->
+  | 
+  | more prose underneath
+  | 
+
+[agent] list_pending_mentions returned:
+  > [
+  >   {
+  >     "id": "m-aaaa",
+  >     "file": "alpha.md",
+  >     "origin": "human",
+  >     "verb": "rephrase",
+  >     "author": "alice",
+  >     "instruction": "tighten this",
+  >     "target_content": "the body of the paragraph\nwith two lines\n",
+  >     "base_hash": "ca779c7eea30dd46",
+  >     "orphan": false,
+  >     "created_at": "2026-05-14T15:49:57.153Z"
+  >   }
+  > ]
+
+[agent] mark_in_progress:
+  > {"ok":true,"mention_id":"m-aaaa","agent":"demo-agent"}
+
+[agent] resolve_mention (replace):
+  > {"ok":true,"mention_id":"m-aaaa","file":"alpha.md","resolution":"replace"}
+
+[disk] docs/alpha.md after resolution:
+  | # alpha
+  | 
+  | the body, now tighter
+  | 
+  | more prose underneath
+  | 
+
+[status drawer] list_recent_changes events:
+  > {
+  >   "events": [
+  >     {
+  >       "kind": "mention-claimed",
+  >       "mention_id": "m-aaaa",
+  >       "file": "alpha.md",
+  >       "agent": "demo-agent",
+  >       "at": "2026-05-14T15:49:57.156Z",
+  >       "id": 1
+  >     },
+  >     {
+  >       "kind": "mention-resolved",
+  >       "mention_id": "m-aaaa",
+  >       "file": "alpha.md",
+  >       "agent": "demo-agent",
+  >       "resolution": "replace",
+  >       "at": "2026-05-14T15:49:57.157Z",
+  >       "id": 2
+  >     }
+  >   ]
+  > }
+

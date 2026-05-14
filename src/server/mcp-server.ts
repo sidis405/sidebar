@@ -8,7 +8,6 @@ import {
   findMention,
   listMentions,
   resolveMention,
-  warnOnceForMalformed,
 } from "./mention-ops.js";
 import type { MentionStore } from "./mention-store.js";
 import type { VerbCatalog } from "./verbs/index.js";
@@ -72,25 +71,9 @@ export function createSidebarMcpServer(deps: McpServerDeps): McpServer {
     },
   );
 
-  const warnedFiles = new Set<string>();
-  const maybeWarnMalformed = (
-    malformedByFile: Map<string, ReturnType<typeof Map.prototype.get>>,
-  ): void => {
-    // One stderr warning per affected file across the process lifetime.
-    // Re-scans don't re-emit; if the file gets fixed and re-broken later,
-    // the user already sees the red gutter in the editor.
-    const fresh = new Map();
-    for (const [f, errs] of malformedByFile as Map<string, unknown>) {
-      if (!warnedFiles.has(f)) {
-        warnedFiles.add(f);
-        fresh.set(f, errs);
-      }
-    }
-    if (fresh.size > 0) {
-      // biome-ignore lint/suspicious/noExplicitAny: shape matches the imported type
-      warnOnceForMalformed(fresh as any);
-    }
-  };
+  // Malformed-marker warnings are emitted by the server's status broadcaster
+  // (server.ts buildStatusSnapshot) so we get exactly one warning per affected
+  // file per process lifetime. MCP tool calls just read; they don't warn.
 
   // -------------------------------------------------------------------------
   // Read tools (existing + slice 4)
@@ -163,8 +146,7 @@ export function createSidebarMcpServer(deps: McpServerDeps): McpServer {
       inputSchema: {},
     },
     async () => {
-      const { mentions, malformedByFile } = await listMentions(workspace, mentionCreatedAt);
-      maybeWarnMalformed(malformedByFile);
+      const { mentions } = await listMentions(workspace, mentionCreatedAt);
       return {
         content: [
           {

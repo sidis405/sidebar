@@ -1,0 +1,22 @@
+=== slice-04 demo: Cmd-K -> createMention ===
+
+[human] wrote docs/alpha.md:
+
+  | # alpha
+  | paragraph one
+  | 
+
+[server] booted at http://127.0.0.1:60464
+
+[editor] verbCatalog reply (built-in human verbs only):
+  > rephrase (human-replace), expand (human-replace), shorten (human-replace), remove-if-redundant (human-replace), factcheck (human-annotation), question (human-annotation), review (human-annotation), explain (human-annotation)
+
+[editor] selected "paragraph one\n" at offset 8.
+
+[editor] mentionCreated id=m-2rt9h file=alpha.md
+
+[disk] docs/alpha.md after Cmd-K:
+  | # alpha
+  | <!-- @sidebar mention id="m-2rt9h" verb="rephrase" origin="human" author="sid": tighten this -->
+  | paragraph one
+  | <!-- @sidebar end id="m-2rt9h" -->
