@@ -343,7 +343,9 @@ describe("CLI: persisted port from local.json", () => {
 
   it("local.json port is honored when --port is absent", async () => {
     await write(cwd, ".sidebar/local.json", JSON.stringify({ version: 1, port: 5291 }));
-    const cli = launchCli(cwd, []);
+    // Asserts the CLI honors the persisted port; opt out of the helper's
+    // default `--port 0` injection.
+    const cli = launchCli(cwd, [], {}, { useProjectPortDefaults: true });
     try {
       const url = await cli.url;
       expect(url).toBe("http://127.0.0.1:5291");
@@ -370,7 +372,9 @@ describe("CLI: persisted port from local.json", () => {
     const blocker = await blockPort(5293);
     try {
       await write(cwd, ".sidebar/local.json", JSON.stringify({ version: 1, port: 5293 }));
-      const cli = launchCli(cwd, []);
+      // Asserts the CLI refuses when local.json port is taken; opt out of
+      // the helper's default `--port 0` injection so local.json is read.
+      const cli = launchCli(cwd, [], {}, { useProjectPortDefaults: true });
       const exit = await new Promise<number | null>((res) => {
         cli.child.once("exit", (code) => res(code));
       });

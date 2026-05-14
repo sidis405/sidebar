@@ -47,16 +47,34 @@ export async function destroyWorkspace(cwd: string): Promise<void> {
   await rm(cwd, { recursive: true, force: true });
 }
 
+export type LaunchOptions = {
+  /** Opt out of the default `--port 0` injection so the CLI exercises its
+   *  real port-resolution logic (fallback 5180-5189, local.json override).
+   *  Only the small number of tests that specifically assert on port
+   *  behavior should set this. Default false. */
+  useProjectPortDefaults?: boolean;
+};
+
 export function launchCli(
   cwd: string,
   args: string[] = [],
   env: Record<string, string> = {},
+  opts: LaunchOptions = {},
 ): LaunchedCli {
   // Test harness suppresses real browser launch by default; tests that need
   // to assert on launch behavior can override via SIDEBAR_OPEN.
+  //
+  // Default to `--port 0` (OS-assigned random port) so parallel test files
+  // don't contend over the 5180-5189 fallback range. Tests passing their own
+  // `--port` or `--stdio` are left alone; tests that specifically assert on
+  // port behavior (fallback range, local.json override) opt in via
+  // `useProjectPortDefaults`.
+  const wantsExplicitPort = args.includes("--port") || args.includes("--stdio");
+  const effectiveArgs =
+    wantsExplicitPort || opts.useProjectPortDefaults ? args : ["--port", "0", ...args];
   const child = spawn(
     TSX_BIN,
-    [CLI_ENTRY, ...args],
+    [CLI_ENTRY, ...effectiveArgs],
     {
       cwd,
       env: {

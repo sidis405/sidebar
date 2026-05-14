@@ -25,7 +25,9 @@ describe("CLI: port selection", () => {
   it("falls back through 5180-5189 when the first ports are taken", async () => {
     const blocker = await blockPort(5180);
     try {
-      const cli = launchCli(cwd, []);
+      // This test specifically exercises the fallback range, so opt out of
+      // launchCli's default `--port 0` injection.
+      const cli = launchCli(cwd, [], {}, { useProjectPortDefaults: true });
       try {
         const url = await cli.url;
         expect(url).toMatch(/127\.0\.0\.1:518[1-9]/);
