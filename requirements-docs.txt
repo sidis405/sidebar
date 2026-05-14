@@ -1,0 +1,17 @@
+# Python deps for `mkdocs build --strict`. Pinned to the versions
+# verified locally against the current mkdocs.yml (Material theme,
+# social cards, git-revision-date-localized plugin, pymdown extensions).
+# Bump deliberately; the docs CI uses these exact versions.
+
+mkdocs==1.6.1
+mkdocs-material==9.7.6
+mkdocs-material-extensions==1.3.1
+mkdocs-git-revision-date-localized-plugin==1.5.1
+pymdown-extensions==10.21.2
+Pygments==2.20.0
+
+# mkdocs-material[imaging] equivalents: the `social` plugin renders
+# cards via CairoSVG and Pillow.
+cairocffi==1.7.1
+CairoSVG==2.9.0
+pillow==12.2.0
