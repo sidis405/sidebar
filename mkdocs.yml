@@ -78,6 +78,7 @@ plugins:
 # is how "Decisions" stays one item even though docs/decisions/ holds
 # eight ADR files, and how "QA" stays one item.
 nav:
+  - Home: index.md
   - Spec: specs/sidebar-v1-draft.md
   - Decisions: decisions/README.md
   - QA: qa/README.md
