@@ -1,0 +1,9 @@
+node_modules
+dist
+.sidebar/local.json
+.sidebar/connection.json
+*.log
+.DS_Store
+coverage
+.vitest-cache
+tsconfig.*.tsbuildinfo
