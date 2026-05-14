@@ -1,0 +1,77 @@
+name: publish
+
+# Tag-driven publish to npm. Push a tag like `v0.1.1` from a commit that
+# bumps `package.json` to the matching version, and this workflow runs
+# the full verification suite, then publishes `sidebar-md` to npm with
+# build provenance.
+#
+# Auth is npm Trusted Publishing (OIDC), not a long-lived token. The
+# package owner on npmjs.com must have registered this repo + workflow
+# as a trusted publisher. See AGENTS.md `## Releasing` for the one-time
+# UI setup.
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: read
+  id-token: write  # required for OIDC Trusted Publishing + provenance attestation
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+          cache: npm
+
+      # Trusted Publishing landed in npm 11.5.1. Node 22 ships with a recent
+      # npm, but pin to latest so a future Node update never silently regresses
+      # the publish path.
+      - name: Upgrade npm
+        run: npm install -g npm@latest
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify tag matches package.json version
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF#refs/tags/v}"
+          pkg=$(node -p "require('./package.json').version")
+          if [ "$tag" != "$pkg" ]; then
+            echo "::error::tag v$tag does not match package.json version $pkg. Bump package.json or fix the tag."
+            exit 1
+          fi
+          echo "publishing sidebar-md@$pkg"
+
+      - name: Refuse to republish an existing version
+        run: |
+          set -euo pipefail
+          pkg=$(node -p "require('./package.json').version")
+          if npm view "sidebar-md@$pkg" version > /dev/null 2>&1; then
+            echo "::error::sidebar-md@$pkg already exists on npm. Bump the version before tagging."
+            exit 1
+          fi
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm run test
+
+      - name: Build
+        run: npm run build
+
+      - name: Publish to npm
+        run: npm publish --provenance --access public

@@ -47,6 +47,42 @@ The QA doc is not a per-slice verification script and not a test replay. Automat
 
 If you find an ambiguity, a contradiction with an ADR, a missing decision, or a state requirement that is not specified, do not guess. Post a comment on the issue describing the gap and stop. A human will resolve. You can resume after.
 
+## Releasing
+
+`sidebar-md` is published to npm from GitHub Actions, not from a maintainer laptop. The publish workflow lives at `.github/workflows/publish.yml` and fires on any tag matching `v*.*.*`.
+
+### Day-to-day release flow
+
+1. On `main`, bump `version` in `package.json` (e.g. `0.1.0` to `0.1.1`). Commit as `chore: release vX.Y.Z`.
+2. Tag the commit: `git tag vX.Y.Z`. The tag must match `package.json` exactly (the workflow fails fast otherwise).
+3. Push: `git push origin main && git push origin vX.Y.Z`.
+4. GitHub Actions runs `npm ci`, `typecheck`, `test`, `build`, and on green publishes with `npm publish --provenance --access public`. The provenance attestation links the published tarball to the exact commit and workflow run.
+
+A re-tag of an already-published version is refused by the workflow (it `npm view`s first and exits non-zero on a hit). Bump the version before tagging again.
+
+### One-time npm setup (Trusted Publishing)
+
+The workflow authenticates to npm via OIDC, not a long-lived token. To enable that, the package owner registers this repo and workflow as a trusted publisher on npmjs.com:
+
+1. Visit https://www.npmjs.com/package/sidebar-md/access and sign in.
+2. Scroll to **Trusted publishers**. Click **Add trusted publisher**.
+3. Pick **GitHub Actions**. Fill in:
+   * **Organization or user**: `sidis405`
+   * **Repository**: `sidebar`
+   * **Workflow filename**: `publish.yml`
+   * **Environment name**: leave blank (the workflow does not gate on an environment)
+4. Save.
+
+Once registered, the workflow publishes without `NPM_TOKEN`. Any pre-existing publish tokens for this package should be revoked at https://www.npmjs.com/settings/sidis405/tokens.
+
+### Local sanity before tagging
+
+The workflow runs `typecheck`, `test`, and `build`. Running them locally before tagging avoids a wasted CI cycle:
+
+```
+npm ci && npm run typecheck && npm run test && npm run build
+```
+
 ## Why this exists
 
 Sidebar's V1 is being built as 11 parallel-trackable slices by autonomous agents. Without this agreement, agents drift in language, stack, scope, and verification, and the slices stop composing. The agreement is the contract that lets parallelism actually work.
