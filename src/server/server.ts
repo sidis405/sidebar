@@ -4,6 +4,12 @@ import { extname, relative, resolve, sep } from "node:path";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { type WebSocket, WebSocketServer } from "ws";
 import type { ClientMessage, ServerMessage, StatusSnapshot } from "../shared/protocol.js";
+import {
+  type AnnotationCreatedAtMap,
+  acceptSuggestion,
+  addAnnotation,
+  removeAnnotation,
+} from "./annotation-ops.js";
 import { resolveHumanAuthor } from "./author.js";
 import { type DirtyBufferTracker, createDirtyBufferTracker } from "./dirty-buffer.js";
 import {
@@ -34,6 +40,7 @@ export type ServerHandle = {
   dirtyBuffers: DirtyBufferTracker;
   mentionStore: MentionStore;
   mentionCreatedAt: MentionCreatedAtMap;
+  annotationCreatedAt: AnnotationCreatedAtMap;
   verbCatalog: VerbCatalog;
   close: () => Promise<void>;
 };
@@ -56,12 +63,14 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
   const dirtyBuffers = createDirtyBufferTracker();
   const mentionStore = createMentionStore();
   const mentionCreatedAt: MentionCreatedAtMap = new Map();
+  const annotationCreatedAt: AnnotationCreatedAtMap = new Map();
   const warnedMalformedFiles = new Set<string>();
   const mcpDeps = {
     workspace,
     dirtyBuffers,
     mentionStore,
     mentionCreatedAt,
+    annotationCreatedAt,
     verbCatalog,
     resolveHumanAuthor: () => resolveHumanAuthor(workspace.root),
   };
@@ -283,6 +292,7 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
         dirtyBuffers,
         mentionStore,
         mentionCreatedAt,
+        annotationCreatedAt,
         verbCatalog,
         broadcastStatus,
       }).catch((e) => {
@@ -327,6 +337,7 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
     dirtyBuffers,
     mentionStore,
     mentionCreatedAt,
+    annotationCreatedAt,
     verbCatalog,
     close: async () => {
       // Terminate live WebSocket clients before closing the HTTP server, or
@@ -371,21 +382,19 @@ type HandlerDeps = {
   dirtyBuffers: DirtyBufferTracker;
   mentionStore: MentionStore;
   mentionCreatedAt: MentionCreatedAtMap;
+  annotationCreatedAt: AnnotationCreatedAtMap;
   verbCatalog: VerbCatalog;
   broadcastStatus: () => Promise<void>;
 };
 
-async function handleMessage(
-  msg: ClientMessage,
-  ws: WebSocket,
-  deps: HandlerDeps,
-): Promise<void> {
+async function handleMessage(msg: ClientMessage, ws: WebSocket, deps: HandlerDeps): Promise<void> {
   const {
     workspace,
     refreshTree,
     dirtyBuffers,
     mentionStore,
     mentionCreatedAt,
+    annotationCreatedAt,
     verbCatalog,
     broadcastStatus,
   } = deps;
@@ -559,6 +568,145 @@ async function handleMessage(
         file: "",
         agent: released.agentName,
         reason: "manual release from status drawer",
+        at: new Date().toISOString(),
+      });
+      await broadcastStatus();
+      return;
+    }
+    case "createAnnotation":
+      try {
+        const author = resolveHumanAuthor(workspace.root);
+        const result = await addAnnotation(workspace, {
+          path: msg.path,
+          target_anchor: { start: msg.startOffset, end: msg.endOffset },
+          type: msg.type,
+          content: msg.content,
+          author,
+        });
+        annotationCreatedAt.set(result.annotation.id, new Date().toISOString());
+        mentionStore.recordEvent({
+          kind: "annotation-created",
+          annotation_id: result.annotation.id,
+          file: msg.path,
+          annotation_type: msg.type,
+          author,
+          at: new Date().toISOString(),
+        });
+        send({
+          kind: "annotationCreated",
+          annotationId: result.annotation.id,
+          file: msg.path,
+          type: msg.type,
+        });
+        await broadcastStatus();
+      } catch (e) {
+        send({
+          kind: "error",
+          message: "createAnnotation failed",
+          cause: (e as Error).message,
+        });
+      }
+      return;
+    case "acceptSuggestion": {
+      const result = await acceptSuggestion(workspace, msg.annotationId, annotationCreatedAt);
+      if (result.kind === "not-found") {
+        send({
+          kind: "error",
+          message: "acceptSuggestion failed",
+          cause: `no annotation with id ${msg.annotationId}`,
+        });
+        return;
+      }
+      if (result.kind === "not-suggestion") {
+        send({
+          kind: "error",
+          message: "acceptSuggestion failed",
+          cause: `annotation ${msg.annotationId} is not a suggestion`,
+        });
+        return;
+      }
+      mentionStore.recordEvent({
+        kind: "suggestion-accepted",
+        annotation_id: msg.annotationId,
+        file: result.file,
+        author: result.author,
+        at: new Date().toISOString(),
+      });
+      await broadcastStatus();
+      return;
+    }
+    case "rejectSuggestion": {
+      const author = resolveHumanAuthor(workspace.root);
+      // Reject = remove the annotation pair. The human is the actor here so
+      // we do not enforce author scope on the underlying removal.
+      const result = await removeAnnotation(workspace, msg.annotationId, {
+        firstSeenAt: annotationCreatedAt,
+      });
+      void author;
+      if (result.kind === "not-found") {
+        send({
+          kind: "error",
+          message: "rejectSuggestion failed",
+          cause: `no annotation with id ${msg.annotationId}`,
+        });
+        return;
+      }
+      if (result.kind === "forbidden") {
+        // unreachable in this path (no requireAuthor), but keep the branch
+        // exhaustive so the discriminated union stays sound.
+        send({
+          kind: "error",
+          message: "rejectSuggestion failed",
+          cause: `annotation ${msg.annotationId} is owned by ${result.author}`,
+        });
+        return;
+      }
+      if (result.type !== "suggestion") {
+        // Removing a note via the reject path is a contract violation; the
+        // UI only renders Accept/Reject on suggestion cards.
+        send({
+          kind: "error",
+          message: "rejectSuggestion failed",
+          cause: `annotation ${msg.annotationId} is a note, not a suggestion`,
+        });
+        return;
+      }
+      mentionStore.recordEvent({
+        kind: "suggestion-rejected",
+        annotation_id: msg.annotationId,
+        file: result.file,
+        author: result.author,
+        at: new Date().toISOString(),
+      });
+      await broadcastStatus();
+      return;
+    }
+    case "removeAnnotation": {
+      const result = await removeAnnotation(workspace, msg.annotationId, {
+        firstSeenAt: annotationCreatedAt,
+      });
+      if (result.kind === "not-found") {
+        send({
+          kind: "error",
+          message: "removeAnnotation failed",
+          cause: `no annotation with id ${msg.annotationId}`,
+        });
+        return;
+      }
+      if (result.kind === "forbidden") {
+        send({
+          kind: "error",
+          message: "removeAnnotation failed",
+          cause: `annotation ${msg.annotationId} is owned by ${result.author}`,
+        });
+        return;
+      }
+      mentionStore.recordEvent({
+        kind: "annotation-removed",
+        annotation_id: msg.annotationId,
+        file: result.file,
+        annotation_type: result.type,
+        author: resolveHumanAuthor(workspace.root),
         at: new Date().toISOString(),
       });
       await broadcastStatus();

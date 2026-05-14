@@ -1,0 +1,51 @@
+=== slice-05 demo: agent suggests, human accepts ===
+
+[agent] add_annotation(suggestion) returned:
+  > {
+  >   "id": "s-673ow",
+  >   "file": "alpha.md",
+  >   "type": "suggestion",
+  >   "author": "claude-code",
+  >   "target_anchor": {
+  >     "start": 9,
+  >     "end": 63
+  >   }
+  > }
+
+[disk] docs/alpha.md after suggestion creation:
+  | # alpha
+  | 
+  | <!-- @sidebar suggestion id="s-673ow" author="claude-code": the original paragraph is tight now. -->
+  | the original paragraph is wordy and could be tighter.
+  | <!-- @sidebar end id="s-673ow" -->
+
+[human] accepted suggestion s-673ow via the side-card Accept button.
+
+[disk] docs/alpha.md after Accept:
+  | # alpha
+  | 
+  | the original paragraph is tight now.
+  | 
+
+[status drawer] list_recent_changes (suggestion-accepted should be present):
+  > {
+  >   "events": [
+  >     {
+  >       "kind": "annotation-created",
+  >       "annotation_id": "s-673ow",
+  >       "file": "alpha.md",
+  >       "annotation_type": "suggestion",
+  >       "author": "claude-code",
+  >       "at": "2026-05-14T16:37:01.084Z",
+  >       "id": 1
+  >     },
+  >     {
+  >       "kind": "suggestion-accepted",
+  >       "annotation_id": "s-673ow",
+  >       "file": "alpha.md",
+  >       "author": "claude-code",
+  >       "at": "2026-05-14T16:37:01.090Z",
+  >       "id": 2
+  >     }
+  >   ]
+  > }

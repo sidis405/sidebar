@@ -134,7 +134,11 @@ export async function createMention(
 ): Promise<CreateMentionResult> {
   const abs = ws.toAbs(input.path);
   const original = await readFile(abs, "utf8");
-  if (input.startOffset < 0 || input.endOffset > original.length || input.startOffset > input.endOffset) {
+  if (
+    input.startOffset < 0 ||
+    input.endOffset > original.length ||
+    input.startOffset > input.endOffset
+  ) {
     throw new Error(
       `createMention: invalid offsets [${input.startOffset}, ${input.endOffset}] for file length ${original.length}`,
     );
@@ -183,7 +187,7 @@ export async function createMention(
 
 export type ResolveAction =
   | { type: "replace"; content: string }
-  | { type: "annotation"; annotation_type: "note"; text: string };
+  | { type: "annotation"; annotation_type: "note" | "suggestion"; text: string };
 
 export type ResolveResult =
   | { kind: "ok"; newContent: string }
@@ -238,8 +242,13 @@ export async function resolveMention(
     return { kind: "ok", newContent };
   }
 
-  // Annotation resolution. The mention markers are stripped; the original
-  // target content stays; a fresh note annotation pair wraps the same region.
+  // Annotation resolution. Only the `note` flavor is reachable here; the
+  // MCP layer rejects `suggestion` before we run (slice 5 contract). The
+  // mention markers are stripped; the original target content stays; a fresh
+  // note annotation pair wraps the same region.
+  if (action.annotation_type !== "note") {
+    return { kind: "verb-not-replaceable", verb: target.verb };
+  }
   const noteId = generateNoteId();
   const noteBegin = formatAnnotationBegin({
     type: "note",

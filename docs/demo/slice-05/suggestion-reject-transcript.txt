@@ -1,0 +1,38 @@
+=== slice-05 demo: agent suggests, human rejects ===
+
+[agent] add_annotation(suggestion) -> id s-7ge4z
+[human] rejected suggestion s-7ge4z via the side-card Reject button.
+
+[disk] docs/alpha.md after Reject (annotation gone, prose unchanged):
+  | # alpha
+  | 
+  | the original paragraph stays put because the human rejects.
+  | 
+
+[agent] list_annotations after Reject (should be empty):
+  > {
+  >   "annotations": []
+  > }
+
+[status drawer] list_recent_changes (suggestion-rejected present):
+  > {
+  >   "events": [
+  >     {
+  >       "kind": "annotation-created",
+  >       "annotation_id": "s-7ge4z",
+  >       "file": "alpha.md",
+  >       "annotation_type": "suggestion",
+  >       "author": "claude-code",
+  >       "at": "2026-05-14T16:37:08.268Z",
+  >       "id": 1
+  >     },
+  >     {
+  >       "kind": "suggestion-rejected",
+  >       "annotation_id": "s-7ge4z",
+  >       "file": "alpha.md",
+  >       "author": "claude-code",
+  >       "at": "2026-05-14T16:37:08.274Z",
+  >       "id": 2
+  >     }
+  >   ]
+  > }

@@ -64,6 +64,40 @@ export type RecentEvent =
       file: string;
       author: string;
       at: string;
+    }
+  | {
+      id: number;
+      kind: "annotation-created";
+      annotation_id: string;
+      file: string;
+      annotation_type: "note" | "suggestion";
+      author: string;
+      at: string;
+    }
+  | {
+      id: number;
+      kind: "annotation-removed";
+      annotation_id: string;
+      file: string;
+      annotation_type: "note" | "suggestion";
+      author: string;
+      at: string;
+    }
+  | {
+      id: number;
+      kind: "suggestion-accepted";
+      annotation_id: string;
+      file: string;
+      author: string;
+      at: string;
+    }
+  | {
+      id: number;
+      kind: "suggestion-rejected";
+      annotation_id: string;
+      file: string;
+      author: string;
+      at: string;
     };
 
 export type ConnectedAgent = {
@@ -77,7 +111,11 @@ export type RecentEventInput =
   | Omit<Extract<RecentEvent, { kind: "mention-released" }>, "id">
   | Omit<Extract<RecentEvent, { kind: "mention-resolved" }>, "id">
   | Omit<Extract<RecentEvent, { kind: "mention-cancelled" }>, "id">
-  | Omit<Extract<RecentEvent, { kind: "file-edited" }>, "id">;
+  | Omit<Extract<RecentEvent, { kind: "file-edited" }>, "id">
+  | Omit<Extract<RecentEvent, { kind: "annotation-created" }>, "id">
+  | Omit<Extract<RecentEvent, { kind: "annotation-removed" }>, "id">
+  | Omit<Extract<RecentEvent, { kind: "suggestion-accepted" }>, "id">
+  | Omit<Extract<RecentEvent, { kind: "suggestion-rejected" }>, "id">;
 
 export type MentionStore = {
   claim: (mentionId: string, agentName: string) => { ok: true } | { ok: false; heldBy: string };

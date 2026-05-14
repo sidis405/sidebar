@@ -73,6 +73,7 @@ async function bootPrimary(opts: StdioBootOptions): Promise<StdioBootResult> {
     dirtyBuffers: handle.dirtyBuffers,
     mentionStore: handle.mentionStore,
     mentionCreatedAt: handle.mentionCreatedAt,
+    annotationCreatedAt: handle.annotationCreatedAt,
     verbCatalog: handle.verbCatalog,
     resolveHumanAuthor: () => resolveHumanAuthor(handle.workspace.root),
   });

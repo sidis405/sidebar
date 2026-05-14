@@ -1,0 +1,46 @@
+=== slice-05 demo: human note via Cmd-K, agent reads via MCP ===
+
+[human] opened alpha.md in the editor.
+
+[human] Cmd-K -> createAnnotation(note) -> id n-8cbfn
+
+[disk] docs/alpha.md after note creation:
+  | # alpha
+  | 
+  | <!-- @sidebar note id="n-8cbfn" author="sid": remember to update this every quarter. -->
+  | this paragraph deserves a note.
+  | <!-- @sidebar end id="n-8cbfn" -->
+
+[agent] list_annotations returned:
+  > {
+  >   "annotations": [
+  >     {
+  >       "id": "n-8cbfn",
+  >       "file": "alpha.md",
+  >       "type": "note",
+  >       "author": "sid",
+  >       "target_content": "this paragraph deserves a note.\n",
+  >       "content": "remember to update this every quarter.",
+  >       "target_anchor": {
+  >         "start": 98,
+  >         "end": 130
+  >       },
+  >       "created_at": "2026-05-14T16:36:54.156Z"
+  >     }
+  >   ]
+  > }
+
+[status drawer] list_recent_changes:
+  > {
+  >   "events": [
+  >     {
+  >       "kind": "annotation-created",
+  >       "annotation_id": "n-8cbfn",
+  >       "file": "alpha.md",
+  >       "annotation_type": "note",
+  >       "author": "sid",
+  >       "at": "2026-05-14T16:36:54.156Z",
+  >       "id": 1
+  >     }
+  >   ]
+  > }

@@ -44,7 +44,11 @@ agent collaboration described below.
 
 Select the text you want the agent to look at, then press Cmd-K
 (Ctrl-K on Linux/Windows). A small popover anchored to the selection
-pops up:
+pops up. A top row offers three modes: `mention`, `note`, and
+`suggestion`. The default mode is `mention`, which preserves the slice
+4 verb flow.
+
+In `mention` mode:
 
 - start typing a verb to filter the built-in list (`rephrase`, `expand`,
   `shorten`, `remove-if-redundant` are action verbs that replace the
@@ -57,7 +61,13 @@ pops up:
   At resolve time it falls back to annotation mode rather than silently
   rewriting prose.
 
-Submitting writes a `<!-- @sidebar mention ... -->target<!-- @sidebar end -->`
+In `note` and `suggestion` modes the verb autocomplete disappears. A
+single textarea collects the annotation's body, which is markdown.
+Cmd-Enter submits. See "Leave a note on a region (Cmd-K)" and "Propose
+an edit as a suggestion (Cmd-K)" below for the per-mode details.
+
+Submitting `mention` writes a
+`<!-- @sidebar mention ... -->target<!-- @sidebar end -->`
 pair to disk with a short id (`m-a3f9`-style), `origin="human"`, and your
 author name (from `git config user.name` if a `.git/` is present, else
 `$USER`, else the literal `human`). The begin line dims, a verb pill
@@ -73,6 +83,68 @@ cancel it.
 You need the file saved (Cmd-S) before Cmd-K writes anything. The
 popover refuses while a buffer is dirty so the marker is never inserted
 into a stale on-disk version.
+
+## Leave a note on a region (Cmd-K, note mode)
+
+Pick the `note` mode in the Cmd-K popover and type the note body. The
+body is markdown; line breaks and formatting are preserved through to
+the side card. Submitting writes a
+`<!-- @sidebar note ... -->target<!-- @sidebar end -->`
+pair to disk with a short id (`n-x7q2`-style), `author=` your resolved
+name, and the body packed into the begin marker.
+
+The note shows up as a side card on the right of the editor, anchored to
+the region. The card body renders the markdown through the same
+CodeMirror live-preview pipeline as the doc body, so what you see in
+the card is what you would see if the content were inline. A note has
+no lifecycle: it stays until you click Remove on the card (or the
+agent that authored it calls `remove_annotation`).
+
+An invited agent reads notes the same way the editor does, via the MCP
+`list_annotations` tool. Notes are information only. They do not
+authorize the agent to change prose.
+
+## Propose an edit as a suggestion (Cmd-K, suggestion mode)
+
+Pick the `suggestion` mode in the Cmd-K popover and type the proposed
+replacement text. The body is markdown source; on accept it replaces
+the target region verbatim with no further transformation. Submitting
+writes a `<!-- @sidebar suggestion ... -->target<!-- @sidebar end -->`
+pair on disk with an `s-q9k2`-style id.
+
+The side card for a suggestion shows two buttons:
+
+- **Accept** swaps the target prose for the proposed text (verbatim) and
+  removes the annotation pair.
+- **Reject** removes the annotation pair only; the target prose stays.
+
+An invited agent can also originate suggestions via the MCP
+`add_annotation(type='suggestion')` tool. The accept/reject UI is the
+same: only the human can accept or reject. The agent never accepts its
+own suggestion. (Asking the agent to accept its own suggestion via
+`resolve_mention` is refused with a clear error pointing at
+`add_annotation`.)
+
+## Watch agent annotations land
+
+Connected agents read and write annotations through MCP:
+
+- `list_annotations(path?)` returns every annotation in the workspace
+  with id, file, type, author, target_content, content, target_anchor,
+  created_at.
+- `add_annotation(path, target_anchor, type, content)` creates a note or
+  suggestion. The agent's identity (from `clientInfo.name`) becomes the
+  annotation's author.
+- `update_annotation(id, content)` rewrites an annotation's body. The
+  agent can only update annotations it authored.
+- `remove_annotation(id)` strips an annotation pair. The agent can only
+  remove annotations it authored. The target prose stays.
+
+Annotations the agent creates show up live as side cards in the editor.
+You see the agent's name as the card's author. The status drawer's
+Recent activity logs `annotation-created`, `annotation-removed`,
+`suggestion-accepted`, and `suggestion-rejected` events as they
+happen.
 
 ## Manage files from the tree
 
