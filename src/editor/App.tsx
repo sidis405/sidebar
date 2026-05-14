@@ -1,8 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { ServerMessage, TreeNode } from "../shared/protocol.ts";
+import type {
+  ServerMessage,
+  StatusSnapshot,
+  TreeNode,
+  VerbCatalogSnapshot,
+} from "../shared/protocol.ts";
+import { CmdK, type CmdKAnchor } from "./CmdK.tsx";
 import { ConflictModal, type ConflictPayload } from "./ConflictModal.tsx";
 import { Editor } from "./Editor.tsx";
 import { FileTree } from "./FileTree.tsx";
+import { StatusDrawer } from "./StatusDrawer.tsx";
 import { useWs } from "./useWs.ts";
 
 type OpenFile = {
@@ -14,11 +21,21 @@ type OpenFile = {
   buffer: string;
 };
 
+type CmdKState = {
+  open: true;
+  startOffset: number;
+  endOffset: number;
+  anchor: CmdKAnchor;
+};
+
 export function App() {
   const ws = useWs();
   const [tree, setTree] = useState<TreeNode[]>([]);
   const [open, setOpen] = useState<OpenFile | null>(null);
   const [conflict, setConflict] = useState<ConflictPayload | null>(null);
+  const [catalog, setCatalog] = useState<VerbCatalogSnapshot | null>(null);
+  const [status, setStatus] = useState<StatusSnapshot | null>(null);
+  const [cmdk, setCmdk] = useState<CmdKState | null>(null);
   const dirtyPaths = useMemo(() => {
     const s = new Set<string>();
     if (open && open.buffer !== open.diskContent) s.add(open.path);
@@ -27,8 +44,7 @@ export function App() {
 
   // Mirror the editor's dirty-buffer state to the server so MCP `read_doc`
   // can populate `is_draft` and `draft_age_seconds` for connected agents
-  // (ADR-0005, spec: Dirty Buffer During Agent Action). The transition
-  // dirty <-> clean is what matters; report each flip exactly once per path.
+  // (ADR-0005, spec: Dirty Buffer During Agent Action).
   const lastReportedDirty = useRef<Map<string, boolean>>(new Map());
   useEffect(() => {
     if (ws.state !== "open") return;
@@ -42,12 +58,10 @@ export function App() {
     }
   }, [open, ws]);
 
-  // Wire up server -> client message handling.
   useEffect(() => {
     return ws.subscribe((msg: ServerMessage) => {
       switch (msg.kind) {
         case "welcome":
-          // Header text is set elsewhere from tree state; nothing to do.
           return;
         case "tree":
         case "treeChanged":
@@ -93,10 +107,7 @@ export function App() {
           setOpen((prev) => {
             if (!prev || prev.path !== msg.path) return prev;
             const dirty = prev.buffer !== prev.diskContent;
-            if (dirty) {
-              // Preserve the buffer; tree update already removed the entry.
-              return prev;
-            }
+            if (dirty) return prev;
             return null;
           });
           return;
@@ -112,17 +123,31 @@ export function App() {
             return prev;
           });
           return;
+        case "verbCatalog":
+          setCatalog(msg.catalog);
+          return;
+        case "status":
+          setStatus(msg.snapshot);
+          return;
+        case "mentionCreated":
+          // Server has rewritten the file with the marker; the watcher will
+          // broadcast diskChanged shortly. Close the popover so the editor
+          // refreshes naturally.
+          setCmdk(null);
+          return;
         case "error":
-          // Surface server errors via the console for V1; richer UI lands later.
           console.error("[sidebar] server error:", msg.message, msg.cause ?? "");
           return;
       }
     });
   }, [ws]);
 
-  // Ask for the tree as soon as we're connected.
+  // Once connected, pull the verb catalog + first status snapshot.
   useEffect(() => {
-    if (ws.state === "open") ws.send({ kind: "list" });
+    if (ws.state !== "open") return;
+    ws.send({ kind: "list" });
+    ws.send({ kind: "verbCatalog" });
+    ws.send({ kind: "statusRequest" });
   }, [ws.state, ws.send]);
 
   const handleOpen = useCallback(
@@ -150,8 +175,6 @@ export function App() {
   const handleRename = useCallback(
     (from: string, to: string) => {
       ws.send({ kind: "rename", from, to });
-      // Update the open buffer's path optimistically; the server's
-      // subsequent diskChanged/treeChanged will reconcile content.
       setOpen((prev) => (prev && prev.path === from ? { ...prev, path: to } : prev));
     },
     [ws],
@@ -165,6 +188,51 @@ export function App() {
       ws.send({ kind: "delete", path });
       setOpen((prev) => (prev && prev.path === path ? null : prev));
     },
+    [ws],
+  );
+
+  const handleCmdK = useCallback(
+    (selection: {
+      startOffset: number;
+      endOffset: number;
+      anchor: CmdKAnchor;
+    }) => {
+      if (!open) return;
+      // The Cmd-K popover wants byte offsets in the doc as it sits on disk.
+      // If the buffer is dirty, ask the user to save first; otherwise the
+      // marker would be inserted into a stale on-disk version.
+      if (open.buffer !== open.diskContent) {
+        window.alert(
+          "Save the file (Cmd-S) before creating a mention. The marker is written to disk, and your unsaved buffer would conflict with the marker insertion.",
+        );
+        return;
+      }
+      setCmdk({ open: true, ...selection });
+    },
+    [open],
+  );
+
+  const submitCmdK = useCallback(
+    (verb: string, instruction: string) => {
+      if (!open || !cmdk) return;
+      ws.send({
+        kind: "createMention",
+        path: open.path,
+        startOffset: cmdk.startOffset,
+        endOffset: cmdk.endOffset,
+        verb,
+        instruction,
+      });
+    },
+    [ws, open, cmdk],
+  );
+
+  const cancelMention = useCallback(
+    (id: string) => ws.send({ kind: "cancelMention", mentionId: id }),
+    [ws],
+  );
+  const releaseClaim = useCallback(
+    (id: string) => ws.send({ kind: "releaseClaim", mentionId: id }),
     [ws],
   );
 
@@ -202,6 +270,7 @@ export function App() {
             value={open.buffer}
             onChange={(v) => setOpen((prev) => (prev ? { ...prev, buffer: v } : prev))}
             onSaveRequest={handleSave}
+            onCmdK={handleCmdK}
           />
         ) : (
           <div className="empty-state">
@@ -209,11 +278,24 @@ export function App() {
           </div>
         )}
       </main>
+      <StatusDrawer
+        snapshot={status}
+        onCancelMention={cancelMention}
+        onReleaseClaim={releaseClaim}
+        onOpenFile={handleOpen}
+      />
+      {cmdk && (
+        <CmdK
+          catalog={catalog}
+          anchor={cmdk.anchor}
+          onCancel={() => setCmdk(null)}
+          onSubmit={submitCmdK}
+        />
+      )}
       {conflict && (
         <ConflictModal
           conflict={conflict}
           onKeepOurs={() => {
-            // Refresh our notion of disk so the next save is rebased on theirs.
             setOpen((prev) =>
               prev && prev.path === conflict.path
                 ? { ...prev, diskContent: conflict.theirs, diskHash: conflict.theirsHash }
@@ -235,10 +317,6 @@ export function App() {
             setConflict(null);
           }}
           onMergeView={() => {
-            // V1 merge view is the side-by-side panel that's already visible
-            // in the modal; the action keeps the modal open until the user
-            // picks ours/theirs. This button focuses the merge area for
-            // keyboard users.
             const el = document.querySelector(".merge-preview");
             (el as HTMLElement | null)?.scrollIntoView({ behavior: "smooth" });
           }}

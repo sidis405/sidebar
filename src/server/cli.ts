@@ -22,6 +22,7 @@ import { log, setLogLevel } from "./log.js";
 import { assertNodeVersion } from "./runtime-check.js";
 import { type ServerHandle, startServer } from "./server.js";
 import { bootStdio } from "./stdio.js";
+import { buildVerbCatalog } from "./verbs/index.js";
 import {
   createWorkspace,
   defaultScope,
@@ -104,6 +105,8 @@ type EffectiveSettings = {
   portExplicit: boolean;
   /** Browser launch mode. CLI > local.json > "default". */
   browser: string;
+  /** The parsed .sidebar/config.json (or null). Slice 4 reads `verbs` from it. */
+  config: SidebarConfigFile | null;
 };
 
 function resolveSettings(args: ParsedArgs, loaded: LoadConfigResult): EffectiveSettings {
@@ -118,7 +121,7 @@ function resolveSettings(args: ParsedArgs, loaded: LoadConfigResult): EffectiveS
 
   const browser = args.browser ?? loc?.browser ?? "default";
 
-  return { scope, scopeFromDisk, port, portExplicit, browser };
+  return { scope, scopeFromDisk, port, portExplicit, browser, config: cfg };
 }
 
 function warnUnignoredLocal(cwd: string, local: SidebarLocalFile | null): void {
@@ -199,11 +202,12 @@ async function runStdioCommand(settings: EffectiveSettings): Promise<void> {
   const cwd = procCwd();
   const workspace = await prepareWorkspaceOrExit(settings, cwd, { promptOnMissing: false });
   const staticRoot = resolveStaticRoot();
+  const verbCatalog = buildVerbCatalog(settings.config);
 
   const boot = await bootStdio({
     cwd,
     startPrimary: async () => {
-      const handle = await bindServer(workspace, settings, staticRoot);
+      const handle = await bindServer(workspace, settings, staticRoot, verbCatalog);
       process.stderr.write(`sidebar primary listening at ${handle.url}\n`);
       process.stderr.write(`  workspace: ${workspace.root}\n`);
       process.stderr.write(`  scope:     ${workspace.scope}\n`);
@@ -240,8 +244,9 @@ async function runServeCommand(settings: EffectiveSettings): Promise<void> {
 
   const workspace = await prepareWorkspaceOrExit(settings, cwd, { promptOnMissing: true });
   const staticRoot = resolveStaticRoot();
+  const verbCatalog = buildVerbCatalog(settings.config);
 
-  const handle = await bindServer(workspace, settings, staticRoot);
+  const handle = await bindServer(workspace, settings, staticRoot, verbCatalog);
 
   process.stderr.write(`sidebar listening at ${handle.url}\n`);
   process.stderr.write(`  workspace: ${workspace.root}\n`);
@@ -259,10 +264,11 @@ async function bindServer(
   workspace: ReturnType<typeof createWorkspace>,
   settings: EffectiveSettings,
   staticRoot: string | null,
+  verbCatalog: ReturnType<typeof buildVerbCatalog>,
 ): Promise<ServerHandle> {
   if (settings.portExplicit && settings.port !== undefined) {
     try {
-      return await startServer({ workspace, port: settings.port, staticRoot });
+      return await startServer({ workspace, port: settings.port, staticRoot, verbCatalog });
     } catch (e) {
       const code = (e as NodeJS.ErrnoException).code;
       if (code === "EADDRINUSE") {
@@ -275,7 +281,7 @@ async function bindServer(
       throw e;
     }
   }
-  return tryFallback(workspace, staticRoot);
+  return tryFallback(workspace, staticRoot, verbCatalog);
 }
 
 async function prepareWorkspaceOrExit(
@@ -315,10 +321,11 @@ async function prepareWorkspaceOrExit(
 async function tryFallback(
   workspace: ReturnType<typeof createWorkspace>,
   staticRoot: string | null,
+  verbCatalog: ReturnType<typeof buildVerbCatalog>,
 ): Promise<ServerHandle> {
   for (let p = PORT_FALLBACK_START; p <= PORT_FALLBACK_END; p++) {
     try {
-      return await startServer({ workspace, port: p, staticRoot });
+      return await startServer({ workspace, port: p, staticRoot, verbCatalog });
     } catch (e) {
       if ((e as NodeJS.ErrnoException).code !== "EADDRINUSE") throw e;
       log.debug(`port ${p} busy, trying next`);
