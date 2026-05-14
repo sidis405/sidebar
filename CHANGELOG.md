@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.3](https://github.com/sidis405/sidebar/compare/v0.1.2...v0.1.3) (2026-05-14)
+
+
+### Performance
+
+* build CLI before tests so each spawn skips tsx cold-start ([#25](https://github.com/sidis405/sidebar/issues/25)) ([6e96924](https://github.com/sidis405/sidebar/commit/6e96924904db71a986c0e1aefa15ca42c11c0442))
+
 ## [0.1.2](https://github.com/sidis405/sidebar/compare/v0.1.1...v0.1.2) (2026-05-14)
 
 
