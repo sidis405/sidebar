@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { ServerMessage, TreeNode } from "../shared/protocol.ts";
 import { ConflictModal, type ConflictPayload } from "./ConflictModal.tsx";
 import { Editor } from "./Editor.tsx";
 import { FileTree } from "./FileTree.tsx";
 import { useWs } from "./useWs.ts";
-import type { ServerMessage, TreeNode } from "../shared/protocol.ts";
 
 type OpenFile = {
   path: string;
@@ -24,6 +24,23 @@ export function App() {
     if (open && open.buffer !== open.diskContent) s.add(open.path);
     return s;
   }, [open]);
+
+  // Mirror the editor's dirty-buffer state to the server so MCP `read_doc`
+  // can populate `is_draft` and `draft_age_seconds` for connected agents
+  // (ADR-0005, spec: Dirty Buffer During Agent Action). The transition
+  // dirty <-> clean is what matters; report each flip exactly once per path.
+  const lastReportedDirty = useRef<Map<string, boolean>>(new Map());
+  useEffect(() => {
+    if (ws.state !== "open") return;
+    const isDirty = open ? open.buffer !== open.diskContent : false;
+    if (open) {
+      const last = lastReportedDirty.current.get(open.path);
+      if (last !== isDirty) {
+        lastReportedDirty.current.set(open.path, isDirty);
+        ws.send({ kind: "dirty", path: open.path, isDirty });
+      }
+    }
+  }, [open, ws]);
 
   // Wire up server -> client message handling.
   useEffect(() => {
@@ -142,9 +159,7 @@ export function App() {
   const handleDelete = useCallback(
     (path: string, confirmIfDirty: boolean) => {
       if (confirmIfDirty) {
-        const ok = window.confirm(
-          `${path} has unsaved edits. Delete anyway?`,
-        );
+        const ok = window.confirm(`${path} has unsaved edits. Delete anyway?`);
         if (!ok) return;
       }
       ws.send({ kind: "delete", path });

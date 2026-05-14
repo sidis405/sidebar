@@ -1,8 +1,10 @@
-import { type IncomingMessage, type Server, type ServerResponse, createServer } from "node:http";
 import { readFile, stat } from "node:fs/promises";
+import { type IncomingMessage, type Server, type ServerResponse, createServer } from "node:http";
 import { extname, relative, resolve, sep } from "node:path";
-import { WebSocketServer, type WebSocket } from "ws";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { type WebSocket, WebSocketServer } from "ws";
 import type { ClientMessage, ServerMessage } from "../shared/protocol.js";
+import { type DirtyBufferTracker, createDirtyBufferTracker } from "./dirty-buffer.js";
 import {
   createFile,
   createFolder,
@@ -12,11 +14,14 @@ import {
   saveWorkspaceFile,
 } from "./files.js";
 import { log } from "./log.js";
-import { buildTree, startWatcher, type Workspace } from "./workspace.js";
+import { createSidebarMcpServer } from "./mcp-server.js";
+import { type Workspace, buildTree, startWatcher } from "./workspace.js";
 
 export type ServerHandle = {
   url: string;
   port: number;
+  workspace: Workspace;
+  dirtyBuffers: DirtyBufferTracker;
   close: () => Promise<void>;
 };
 
@@ -33,9 +38,10 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
   const { workspace } = opts;
   const host = opts.host ?? "127.0.0.1";
   const staticRoot = opts.staticRoot ?? null;
+  const dirtyBuffers = createDirtyBufferTracker();
 
   const http = createServer((req, res) => {
-    void handleHttp(req, res, staticRoot).catch((e) => {
+    void route(req, res).catch((e) => {
       try {
         res.statusCode = 500;
         res.end(`internal error: ${(e as Error).message}`);
@@ -44,6 +50,56 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
       }
     });
   });
+
+  // Streamable HTTP MCP transport mounts onto the existing node:http server
+  // (ADR-0008). Stateless mode: one fresh transport + McpServer per POST.
+  // Spec: Architecture / Invocation modes — standalone exposes the MCP
+  // server over HTTP at /mcp so additional agents can attach.
+  const handleMcpHttp = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
+    if (req.method !== "POST") {
+      res.statusCode = 405;
+      res.setHeader("content-type", "application/json");
+      res.end(
+        JSON.stringify({
+          jsonrpc: "2.0",
+          error: { code: -32000, message: "Only POST is supported on /mcp" },
+          id: null,
+        }),
+      );
+      return;
+    }
+    const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
+    const mcp = createSidebarMcpServer({ workspace, dirtyBuffers });
+    try {
+      await mcp.connect(transport);
+      await transport.handleRequest(req, res);
+    } catch (e) {
+      log.warn(`mcp http handler error: ${(e as Error).message}`);
+      if (!res.headersSent) {
+        res.statusCode = 500;
+        res.end(
+          JSON.stringify({
+            jsonrpc: "2.0",
+            error: { code: -32603, message: "internal error" },
+            id: null,
+          }),
+        );
+      }
+    } finally {
+      // The stateless transport is single-request; close after we are done.
+      void transport.close().catch(() => {});
+      void mcp.close().catch(() => {});
+    }
+  };
+
+  const route = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
+    const url = req.url ?? "/";
+    if (url === "/mcp" || url.startsWith("/mcp?")) {
+      await handleMcpHttp(req, res);
+      return;
+    }
+    await handleHttp(req, res, staticRoot);
+  };
 
   // Bind the port first. The HTTP listener surfaces EADDRINUSE here, before
   // any WebSocketServer or watcher gets created — bailing early keeps a port
@@ -113,7 +169,14 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
 
   wss.on("connection", (ws) => {
     clients.add(ws);
-    ws.on("close", () => clients.delete(ws));
+    // Track paths this tab declared dirty. When the tab disconnects we
+    // unmark them so a closed editor never leaves a phantom draft visible
+    // to MCP clients via `read_doc`.
+    const myDirty = new Set<string>();
+    ws.on("close", () => {
+      for (const p of myDirty) dirtyBuffers.setDirty(p, false);
+      clients.delete(ws);
+    });
     ws.on("message", (raw) => {
       let msg: ClientMessage;
       try {
@@ -126,7 +189,11 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
       // `kind: "error"` reply, but anything that throws synchronously or
       // before the inner try/catch (e.g. `list` building the tree) would
       // otherwise become an unhandled rejection. Belt and suspenders.
-      void handleMessage(msg, ws, workspace, refreshTree).catch((e) => {
+      if (msg.kind === "dirty") {
+        if (msg.isDirty) myDirty.add(msg.path);
+        else myDirty.delete(msg.path);
+      }
+      void handleMessage(msg, ws, workspace, refreshTree, dirtyBuffers).catch((e) => {
         try {
           ws.send(
             JSON.stringify({
@@ -164,6 +231,8 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
   return {
     url,
     port,
+    workspace,
+    dirtyBuffers,
     close: async () => {
       // Terminate live WebSocket clients before closing the HTTP server, or
       // http.close() will wait for the existing upgraded sockets to drain on
@@ -206,10 +275,14 @@ async function handleMessage(
   ws: WebSocket,
   workspace: Workspace,
   refreshTree: () => Promise<void>,
+  dirtyBuffers: DirtyBufferTracker,
 ): Promise<void> {
   const send = (m: ServerMessage) => ws.send(JSON.stringify(m));
   switch (msg.kind) {
     case "hello":
+      return;
+    case "dirty":
+      dirtyBuffers.setDirty(msg.path, msg.isDirty);
       return;
     case "list": {
       try {
