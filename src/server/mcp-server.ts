@@ -50,7 +50,7 @@ export const TIER1_DESCRIPTION = [
   "to skip the file or create an agent-origin mention with verb clarify asking whether to proceed.",
   "",
   "For full guidance (verb tables, mention round-trip examples, multi-agent etiquette, suggestion",
-  "flow), run npx sidebar scaffold-skill in this project. That writes a skill file your agent can",
+  "flow), run npx sidebar-md scaffold-skill in this project. That writes a skill file your agent can",
   "load alongside this server.",
 ].join("\n");
 

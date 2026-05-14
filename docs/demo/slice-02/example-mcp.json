@@ -1,9 +1,9 @@
 {
   "mcpServers": {
-    "sidebar": {
+    "sidebar-md": {
       "command": "npx",
       "args": [
-        "sidebar",
+        "sidebar-md",
         "--stdio"
       ]
     }

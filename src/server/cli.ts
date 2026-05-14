@@ -301,7 +301,7 @@ async function prepareWorkspaceOrExit(
       process.stderr.write(
         `docs/ not found at ${cwd}.\n` +
           `Sidebar's --stdio mode is non-interactive. ` +
-          `Re-run \`npx sidebar\` interactively to create docs/, or wire ` +
+          `Re-run \`npx sidebar-md\` interactively to create docs/, or wire ` +
           `\`--scope "<glob>"\` into your .mcp.json entry.\n`,
       );
       exit(5);

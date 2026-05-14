@@ -21,7 +21,7 @@ can join on invite.
 ## Quick install
 
 ```
-npx sidebar
+npx sidebar-md
 ```
 
 In a project that has a `docs/` folder. A browser tab opens, the file

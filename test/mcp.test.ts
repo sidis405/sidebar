@@ -121,18 +121,18 @@ describe("CLI: init subcommand", () => {
   }
 
   // AC1: `init <agent>` wires up the named agent (claude-code in V1).
-  // AC3: the resulting entry spawns `npx sidebar --stdio`.
-  it("init claude-code writes a .mcp.json with a sidebar entry that spawns --stdio", async () => {
+  // AC3: the resulting entry spawns `npx sidebar-md --stdio`.
+  it("init claude-code writes a .mcp.json with a sidebar-md entry that spawns --stdio", async () => {
     const { code } = await runInit(["claude-code"]);
     expect(code).toBe(0);
     const raw = await readFile(join(cwd, ".mcp.json"), "utf8");
     const parsed = JSON.parse(raw);
     expect(parsed.mcpServers).toBeDefined();
-    expect(parsed.mcpServers.sidebar).toBeDefined();
-    const entry = parsed.mcpServers.sidebar;
-    // The entry must spawn `npx sidebar --stdio` (the locked invite shape).
+    expect(parsed.mcpServers["sidebar-md"]).toBeDefined();
+    const entry = parsed.mcpServers["sidebar-md"];
+    // The entry must spawn `npx sidebar-md --stdio` (the locked invite shape).
     expect(entry.command).toBe("npx");
-    expect(entry.args).toContain("sidebar");
+    expect(entry.args).toContain("sidebar-md");
     expect(entry.args).toContain("--stdio");
   });
 
@@ -159,7 +159,7 @@ describe("CLI: init subcommand", () => {
       command: "node",
       args: ["other.js"],
     });
-    expect(afterFirst.mcpServers.sidebar).toBeDefined();
+    expect(afterFirst.mcpServers["sidebar-md"]).toBeDefined();
 
     // Second run must not duplicate or corrupt.
     const second = await runInit(["claude-code"]);
@@ -167,7 +167,7 @@ describe("CLI: init subcommand", () => {
     const afterSecond = JSON.parse(await readFile(join(cwd, ".mcp.json"), "utf8"));
     expect(Object.keys(afterSecond.mcpServers).sort()).toEqual([
       "other-thing",
-      "sidebar",
+      "sidebar-md",
     ]);
     expect(afterSecond.mcpServers["other-thing"]).toEqual({
       command: "node",
@@ -176,15 +176,15 @@ describe("CLI: init subcommand", () => {
   });
 
   // AC1: no-arg detection. Without an arg, `init` should still produce a
-  // sidebar entry when a non-interactive --yes flag is passed (the
+  // sidebar-md entry when a non-interactive --yes flag is passed (the
   // interactive prompt is exercised manually in the QA doc).
-  it("init --yes with no agent arg still writes a sidebar entry for claude-code", async () => {
+  it("init --yes with no agent arg still writes a sidebar-md entry for claude-code", async () => {
     const { code } = await runInit(["--yes"]);
     expect(code).toBe(0);
     const raw = await readFile(join(cwd, ".mcp.json"), "utf8");
     const parsed = JSON.parse(raw);
-    expect(parsed.mcpServers.sidebar).toBeDefined();
-    expect(parsed.mcpServers.sidebar.args).toContain("--stdio");
+    expect(parsed.mcpServers["sidebar-md"]).toBeDefined();
+    expect(parsed.mcpServers["sidebar-md"].args).toContain("--stdio");
   });
 });
 
@@ -215,7 +215,7 @@ describe("MCP server: stdio primary", () => {
 
   // AC11: Tier-1 server description on initialize is 200-400 tokens covering
   // what sidebar is, prose-edit permission model, base_hash protocol,
-  // is_draft signal, and a pointer to npx sidebar scaffold-skill.
+  // is_draft signal, and a pointer to npx sidebar-md scaffold-skill.
   it("initialize returns a 200-400 token description covering the Tier-1 floor", async () => {
     stdio = await connectStdio(cwd);
     const info = stdio.client.getServerVersion();
@@ -445,7 +445,7 @@ describe("standalone: refuses while a primary is alive", () => {
     await destroyWorkspace(cwd);
   });
 
-  it("npx sidebar refuses to start if .sidebar/connection.json points at a live primary", async () => {
+  it("npx sidebar-md refuses to start if .sidebar/connection.json points at a live primary", async () => {
     const primary = await connectStdio(cwd);
     try {
       const connPath = join(cwd, ".sidebar", "connection.json");

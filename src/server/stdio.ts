@@ -14,7 +14,7 @@ import { log } from "./log.js";
 import { TIER1_DESCRIPTION, createSidebarMcpServer } from "./mcp-server.js";
 import type { ServerHandle } from "./server.js";
 
-// `npx sidebar --stdio` is the invite hook (ADR-0007). The MCP client of the
+// `npx sidebar-md --stdio` is the invite hook (ADR-0007). The MCP client of the
 // user's agent spawns this binary; on stdin it expects JSON-RPC, on stdout
 // it sends the same. On the same process we either:
 //

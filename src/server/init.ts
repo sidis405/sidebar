@@ -2,8 +2,8 @@ import { existsSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
-// `npx sidebar init [agent]` writes a project-local `.mcp.json` entry that
-// spawns `npx sidebar --stdio`. V1 supports the Claude Code / Compound
+// `npx sidebar-md init [agent]` writes a project-local `.mcp.json` entry that
+// spawns `npx sidebar-md --stdio`. V1 supports the Claude Code / Compound
 // shared `.mcp.json` layout (one entry under `mcpServers`). See ADR-0007.
 //
 // Existing unrelated entries in `.mcp.json` are preserved. Re-running is
@@ -30,10 +30,10 @@ export type SidebarEntry = {
 };
 
 export function sidebarMcpEntry(): SidebarEntry {
-  // `npx sidebar --stdio` is the locked invite shape (ADR-0007). Anyone
-  // wanting a different command (e.g. a globally installed `sidebar` bin)
+  // `npx sidebar-md --stdio` is the locked invite shape (ADR-0007). Anyone
+  // wanting a different command (e.g. a globally installed `sidebar-md` bin)
   // can edit the file by hand; sidebar's own init writes the npx form.
-  return { command: "npx", args: ["sidebar", "--stdio"] };
+  return { command: "npx", args: ["sidebar-md", "--stdio"] };
 }
 
 export async function runInit(cwd: string, _agent: SupportedAgent): Promise<InitOutcome> {
@@ -62,10 +62,10 @@ export async function runInit(cwd: string, _agent: SupportedAgent): Promise<Init
       : {}
   ) as Record<string, unknown>;
 
-  const before = JSON.stringify(servers.sidebar ?? null);
+  const before = JSON.stringify(servers["sidebar-md"] ?? null);
   const entry = sidebarMcpEntry();
-  servers.sidebar = entry;
-  const after = JSON.stringify(servers.sidebar);
+  servers["sidebar-md"] = entry;
+  const after = JSON.stringify(servers["sidebar-md"]);
 
   const next = { ...base, mcpServers: servers };
   const action: InitOutcome["action"] =

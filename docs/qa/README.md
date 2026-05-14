@@ -11,7 +11,7 @@ automated test suite and the PR description cover those.
 In any project that has a `docs/` folder:
 
 ```
-npx sidebar
+npx sidebar-md
 ```
 
 A browser tab opens at `http://127.0.0.1:5180` (or the next free port
@@ -185,7 +185,7 @@ changed in the meantime, the conflict modal fires on reconnect.
 In your project, once:
 
 ```
-npx sidebar init claude-code
+npx sidebar-md init claude-code
 ```
 
 That writes a project-local `.mcp.json` that points Claude Code's MCP
@@ -255,7 +255,7 @@ time. If the agent's claim is stale by the time it tries to write, the
 
 ## Attach an extra agent on the fly
 
-If sidebar is already running (either standalone via `npx sidebar` or
+If sidebar is already running (either standalone via `npx sidebar-md` or
 spawned by an `init`-wired client), the URL it prints can be used to
 attach additional MCP-speaking clients:
 
@@ -357,7 +357,7 @@ silently working around the problem:
   already in use — sidebar will not pick a different one.
 - A `docs/` folder that does not exist when stdin is not a TTY and
   no `--scope` was provided.
-- A second `npx sidebar` started in a project where one is already
+- A second `npx sidebar-md` started in a project where one is already
   alive (the PID-alive check uses the `.sidebar/connection.json`
   discovery file).
 - A Node version older than 20 LTS.

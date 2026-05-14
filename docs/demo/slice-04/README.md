@@ -41,7 +41,7 @@ These are the parts that need eyeballs.
    press Enter. The file gains a `<!-- @sidebar mention ... -->` begin/end
    pair, and the editor renders the begin line dimmed with a verb pill.
 4. Connect Claude Code (or any MCP-speaking agent) via
-   `npx sidebar init claude-code`, then restart the agent. In the agent,
+   `npx sidebar-md init claude-code`, then restart the agent. In the agent,
    call `list_pending_mentions`, `mark_in_progress`, `resolve_mention`.
 5. The status drawer on the right reflects each step. The mention moves
    from "Pending" to "In progress" (with the agent's name) and disappears

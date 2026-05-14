@@ -1,6 +1,6 @@
 # 0008 — TypeScript single package, node:http server, Vite SPA build
 
-Sidebar V1 is implemented as a single npm package written in strict TypeScript targeting Node 20 LTS. The package ships one `sidebar` binary. The editor is a React 18 SPA built by Vite into static assets that the server hosts. The HTTP surface uses the built-in `node:http` module plus the `ws` package for WebSockets. MCP transports come from `@modelcontextprotocol/sdk` (stdio and the Streamable HTTP adapter that mounts on an existing Node http server). Tests run on Vitest. Lint and format run on Biome. Package manager is npm.
+Sidebar V1 is implemented as a single npm package (`sidebar-md` on npm) written in strict TypeScript targeting Node 20 LTS. The package ships one `sidebar-md` binary. The editor is a React 18 SPA built by Vite into static assets that the server hosts. The HTTP surface uses the built-in `node:http` module plus the `ws` package for WebSockets. MCP transports come from `@modelcontextprotocol/sdk` (stdio and the Streamable HTTP adapter that mounts on an existing Node http server). Tests run on Vitest. Lint and format run on Biome. Package manager is npm.
 
 We considered plain JavaScript. Rejected because the marker shape on disk is a tagged union (mention vs note vs suggestion, with verb constraints by origin), the MCP tool surface has roughly a dozen response shapes that the agent depends on, and V1 will be built by parallel-tracked slices (issues #1 through #11). Typed module boundaries are the cheapest mechanism for catching silent contract drift between slices written by different agents. The marginal toolchain cost is paid once at scaffold; the marginal cost of catching a wrong-shape MCP response in production is paid by every connected agent forever.
 
@@ -8,7 +8,7 @@ We considered an HTTP framework (Hono, Fastify, Express). Rejected because the r
 
 We considered ESLint plus Prettier. Rejected because Biome covers both in a single binary, runs faster than either, and removes the recurring lint-vs-format rule conflict that two-tool setups produce. The smaller plugin ecosystem is acceptable for a project this size.
 
-We considered an npm workspaces monorepo (frontend in `packages/editor`, server in `packages/server`, types in `packages/shared`). Rejected because the runtime is genuinely one process and one shippable artifact. TypeScript project references give us the directory separation we need (`src/editor/`, `src/server/`, `src/shared/`) without the workspace overhead, and the single `npm publish` target matches what `npx sidebar` users actually consume.
+We considered an npm workspaces monorepo (frontend in `packages/editor`, server in `packages/server`, types in `packages/shared`). Rejected because the runtime is genuinely one process and one shippable artifact. TypeScript project references give us the directory separation we need (`src/editor/`, `src/server/`, `src/shared/`) without the workspace overhead, and the single `npm publish` target matches what `npx sidebar-md` users actually consume.
 
 The build is split. Vite builds the editor SPA into `dist/static/`, which the server hosts via its static file route at runtime. `tsc` builds the server into `dist/server/`, which the `bin` entry loads. Both run from one `npm run build` and produce one publishable package.
 

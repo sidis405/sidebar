@@ -26,7 +26,7 @@ async function write(cwd: string, rel: string, body: string): Promise<void> {
 
 // ---------------------------------------------------------------------------
 // AC1: .sidebar/ directory and files are created lazily; not created on plain
-// `npx sidebar` boot.
+// `npx sidebar-md` boot.
 // ---------------------------------------------------------------------------
 
 describe("config: lazy creation on boot", () => {

@@ -13,8 +13,8 @@ _Avoid_: assistant, copilot, LLM
 
 **Invite**:
 The act of wiring up an **Agent** to sidebar's MCP server in a project. Two paths:
-- `npx sidebar init [agent]` writes a project-local `.mcp.json` (or the equivalent per-agent config) with an entry that points the agent's MCP client at `npx sidebar --stdio`. Subsequent agent starts in that project then pick up sidebar automatically; the agent spawns sidebar as a stdio subprocess on boot. This is the one-time act per project.
-- Standalone `npx sidebar` prints an HTTP MCP URL. Any agent already running can attach to that URL ad hoc, without the project having an `init`-written config.
+- `npx sidebar-md init [agent]` writes a project-local `.mcp.json` (or the equivalent per-agent config) with an entry that points the agent's MCP client at `npx sidebar-md --stdio`. Subsequent agent starts in that project then pick up sidebar automatically; the agent spawns sidebar as a stdio subprocess on boot. This is the one-time act per project.
+- Standalone `npx sidebar-md` prints an HTTP MCP URL. Any agent already running can attach to that URL ad hoc, without the project having an `init`-written config.
 _Avoid_: connect, attach, integrate, hook up
 
 **Workspace**:
@@ -52,7 +52,7 @@ _Avoid_: comment, remark, draft
 ## Example dialogue
 
 > **Dev:** "If I want to use sidebar with Codex instead of Claude, what changes?"
-> **Domain expert:** "Sidebar is the same. You run `npx sidebar init codex` once in the project, which writes the appropriate per-agent MCP config. From then on, when you start Codex in the project it spawns sidebar via stdio and joins the **Workspace** on first boot. Sidebar doesn't know or care which agent it is, only that one connected over MCP and self-identified as `codex`."
+> **Domain expert:** "Sidebar is the same. You run `npx sidebar-md init codex` once in the project, which writes the appropriate per-agent MCP config. From then on, when you start Codex in the project it spawns sidebar via stdio and joins the **Workspace** on first boot. Sidebar doesn't know or care which agent it is, only that one connected over MCP and self-identified as `codex`."
 
 ## Flagged ambiguities
 

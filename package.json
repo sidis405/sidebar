@@ -1,13 +1,38 @@
 {
-  "name": "sidebar",
+  "name": "sidebar-md",
   "version": "0.1.0",
-  "description": "Local-first markdown reading and co-authoring surface for a project's docs.",
+  "description": "Local-first markdown editor with a co-author seat for your MCP-speaking agent (Claude Code, Codex, Aider).",
+  "license": "MIT",
+  "author": "Sidrit Trandafili",
+  "homepage": "https://github.com/sidis405/sidebar#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sidis405/sidebar.git"
+  },
+  "bugs": {
+    "url": "https://github.com/sidis405/sidebar/issues"
+  },
+  "keywords": [
+    "markdown",
+    "editor",
+    "mcp",
+    "model-context-protocol",
+    "claude-code",
+    "codex",
+    "aider",
+    "ai-agents",
+    "co-authoring",
+    "local-first",
+    "docs"
+  ],
   "type": "module",
   "bin": {
-    "sidebar": "./dist/server/cli.js"
+    "sidebar-md": "./dist/server/cli.js"
   },
   "files": [
-    "dist"
+    "dist",
+    "README.md",
+    "LICENSE"
   ],
   "engines": {
     "node": ">=20"

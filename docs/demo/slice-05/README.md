@@ -51,7 +51,7 @@ These are the parts that need eyeballs.
    the annotation card disappears. Click Reject on a different suggestion.
    The annotation disappears; the original prose stays.
 6. Connect an MCP-speaking agent (Claude Code or any other) via
-   `npx sidebar init claude-code`, then restart the agent. In the agent
+   `npx sidebar-md init claude-code`, then restart the agent. In the agent
    call `add_annotation(path=..., target_anchor={start, end}, type='suggestion', content='...')`.
    The new card shows up in the editor with the agent's name as author.
 7. Status drawer's Recent activity shows the four new event kinds:

@@ -45,7 +45,7 @@ The agent is "invited" by configuring its MCP client to connect to sidebar's MCP
 
 ### Two components
 
-1. The editor UI. `npx sidebar` launches a local web UI in V1. Tauri later if usage justifies it.
+1. The editor UI. `npx sidebar-md` launches a local web UI in V1. Tauri later if usage justifies it.
 2. The MCP server, exposed by the same sidebar process on a local socket.
 
 ### Data model
@@ -79,7 +79,7 @@ Verbs are open ended but conventional: `rephrase`, `expand`, `factcheck`, `quest
 
 ### Invitation flow
 
-1. User runs `npx sidebar` in a project directory.
+1. User runs `npx sidebar-md` in a project directory.
 2. Sidebar scopes itself to `docs/**` or to a passed glob.
 3. Sidebar prints (or copies to clipboard) an MCP server configuration block.
 4. User pastes that into their agent's MCP config (`.claude/mcp.json`, Codex equivalent, etc.).
@@ -134,7 +134,7 @@ Gutter colors per mention (yellow pending, blue in-progress, green done, red fai
 
 **Basis (reasoned).** Without this surface the human is blind to the agent's work and has no way to intervene.
 
-### 8. `npx sidebar` first. Tauri later if usage justifies.
+### 8. `npx sidebar-md` first. Tauri later if usage justifies.
 
 The data model is the filesystem, so the form factor is a deferred decision. npx removes adoption friction. Tauri is a port if the project gets daily-use traction.
 

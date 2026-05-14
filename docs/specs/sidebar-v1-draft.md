@@ -12,7 +12,7 @@ This document captures the design of sidebar V1 as resolved by grilling the orig
 
 ## Summary
 
-Sidebar is a local-first markdown reading and co-authoring surface for a project's documentation. It exposes a local web-served editor UI and a local MCP server in the same Node process. The user runs `npx sidebar init` once per project, which writes a project-local `.mcp.json` pointing the agent's MCP client at `npx sidebar --stdio`. From then on, starting the agent in the project (e.g. `claude`) automatically spawns sidebar as a stdio subprocess and opens its browser UI. The agent is connected on first boot, no copy-paste, no restart loop. Sidebar can also be launched standalone via `npx sidebar` for read-only or no-agent use; the standalone mode runs over HTTP and additional agents can attach via the printed URL. See [ADR-0007](../decisions/0007-stdio-first-invite-with-http-standalone.md) for the transport rationale.
+Sidebar is a local-first markdown reading and co-authoring surface for a project's documentation. It exposes a local web-served editor UI and a local MCP server in the same Node process. The user runs `npx sidebar-md init` once per project, which writes a project-local `.mcp.json` pointing the agent's MCP client at `npx sidebar-md --stdio`. From then on, starting the agent in the project (e.g. `claude`) automatically spawns sidebar as a stdio subprocess and opens its browser UI. The agent is connected on first boot, no copy-paste, no restart loop. Sidebar can also be launched standalone via `npx sidebar-md` for read-only or no-agent use; the standalone mode runs over HTTP and additional agents can attach via the printed URL. See [ADR-0007](../decisions/0007-stdio-first-invite-with-http-standalone.md) for the transport rationale.
 
 The agent's lifecycle is owned by the user, not sidebar. The agent runs in the user's terminal. Sidebar provides the human-facing visual surface (editor, file tree, diffs, mention queue, status drawer) and the MCP tools the agent uses to read, observe, and act on the workspace within a permission boundary defined by mentions and annotations.
 
@@ -55,11 +55,11 @@ Persistent shared state lives in the markdown files themselves; sidebar's proces
 
 | Command | Role |
 |---------|------|
-| `npx sidebar init [agent]` | One-time per project. Writes a project-local `.mcp.json` with an entry that spawns `npx sidebar --stdio`. With no arg, detects installed MCP-speaking agents and offers to wire up all of them; with an explicit agent (`init claude-code`), writes just that one. Merges with any existing `.mcp.json` rather than overwriting unrelated entries. Idempotent: re-running updates the existing sidebar entry rather than duplicating. Committed to git by default. V1 supports Claude Code and Compound's shared `.mcp.json` layout; Cursor, Codex, and Aider variants land in V1.1. |
-| `npx sidebar` | Standalone HTTP mode. Starts the HTTP server, file watcher, editor; opens the browser. No agent required (Q2). Prints the HTTP MCP URL for any agent that wants to attach. |
-| `npx sidebar --stdio` | Not user-facing. Invoked by an agent's MCP client (via the `.mcp.json` entry written by `init`). On first invocation per project, becomes the primary instance (same components as standalone mode, plus stdio transport for the spawning agent). On subsequent invocations while a primary is already running for the project, acts as a thin proxy: forwards stdio traffic to the primary's HTTP endpoint and does not start a second editor, file watcher, or browser tab. |
+| `npx sidebar-md init [agent]` | One-time per project. Writes a project-local `.mcp.json` with an entry that spawns `npx sidebar-md --stdio`. With no arg, detects installed MCP-speaking agents and offers to wire up all of them; with an explicit agent (`init claude-code`), writes just that one. Merges with any existing `.mcp.json` rather than overwriting unrelated entries. Idempotent: re-running updates the existing sidebar entry rather than duplicating. Committed to git by default. V1 supports Claude Code and Compound's shared `.mcp.json` layout; Cursor, Codex, and Aider variants land in V1.1. |
+| `npx sidebar-md` | Standalone HTTP mode. Starts the HTTP server, file watcher, editor; opens the browser. No agent required (Q2). Prints the HTTP MCP URL for any agent that wants to attach. |
+| `npx sidebar-md --stdio` | Not user-facing. Invoked by an agent's MCP client (via the `.mcp.json` entry written by `init`). On first invocation per project, becomes the primary instance (same components as standalone mode, plus stdio transport for the spawning agent). On subsequent invocations while a primary is already running for the project, acts as a thin proxy: forwards stdio traffic to the primary's HTTP endpoint and does not start a second editor, file watcher, or browser tab. |
 
-The primary instance writes `.sidebar/connection.json` (gitignored, contains the HTTP URL and PID) on boot and removes it on shutdown. Subsequent `--stdio` invocations consult this file to decide whether to become primary or proxy. Standalone `npx sidebar` refuses to start if a primary is already live for the project and prints a clear error.
+The primary instance writes `.sidebar/connection.json` (gitignored, contains the HTTP URL and PID) on boot and removes it on shutdown. Subsequent `--stdio` invocations consult this file to decide whether to become primary or proxy. Standalone `npx sidebar-md` refuses to start if a primary is already live for the project and prints a clear error.
 
 ## Data Model
 
@@ -216,7 +216,7 @@ When the user has unsaved edits and the agent calls `resolve_mention` against th
 
 ## Workspace
 
-Default glob: `docs/**/*.md` strict. Override via `npx sidebar --scope "<glob>"` at boot or via persistent override in `.sidebar/config.json` (specifics open in Q13).
+Default glob: `docs/**/*.md` strict. Override via `npx sidebar-md --scope "<glob>"` at boot or via persistent override in `.sidebar/config.json` (specifics open in Q13).
 
 On startup, if `docs/` does not exist, sidebar prompts the user: create `docs/`, specify a different scope, or quit. No silent fallback to project root.
 
@@ -226,7 +226,7 @@ Files outside the glob are invisible to both the editor and the agent. The agent
 
 All sidebar configuration is project-scoped. There is no global config in `~/.sidebar/` or `~/.config/sidebar/` in V1. Cross-project verb or rate-limit reuse is by copying `.sidebar/config.json`. Revisit if real demand surfaces.
 
-Two files live at `.sidebar/` relative to the project root. Neither is created automatically. The directory and files appear lazily the first time the user performs an action that needs persistence (changes scope from the UI, registers a custom verb, sets a non-default port, runs `npx sidebar --init` explicitly). Until then, sidebar boots on built-in defaults held in memory.
+Two files live at `.sidebar/` relative to the project root. Neither is created automatically. The directory and files appear lazily the first time the user performs an action that needs persistence (changes scope from the UI, registers a custom verb, sets a non-default port, runs `npx sidebar-md --init` explicitly). Until then, sidebar boots on built-in defaults held in memory.
 
 ### `.sidebar/config.json` (committed, team-shared)
 
@@ -269,7 +269,7 @@ The `version` field on both files exists so a future V2 can detect older schemas
 
 ### Out of scope for Q13
 
-- Skill scaffolding target. Handled via `npx sidebar scaffold-skill --into <path>` as an explicit one-time action. Sidebar does not persist a scaffold target in config.
+- Skill scaffolding target. Handled via `npx sidebar-md scaffold-skill --into <path>` as an explicit one-time action. Sidebar does not persist a scaffold target in config.
 - Agent identity defaults (what name is written into marker `author` fields). Resolved in Q14.
 
 ## Identity and Multi-Agent
@@ -342,7 +342,7 @@ This makes parallel projects work without configuration: project A binds 5180, p
 
 ### MCP server crash
 
-Any unhandled error in MCP server code crashes the whole sidebar process. The browser tab observes the WebSocket drop and shows a disconnected state. The user restarts `npx sidebar` (or restarts their agent, which respawns sidebar via stdio). Individual MCP tool handlers catch their own errors and return MCP error responses, so a bad agent call does not crash the process; only structural or unexpected errors do. Isolated MCP-only restart is rejected because the editor and MCP server share in-memory state and partial recovery invites half-consistent states.
+Any unhandled error in MCP server code crashes the whole sidebar process. The browser tab observes the WebSocket drop and shows a disconnected state. The user restarts `npx sidebar-md` (or restarts their agent, which respawns sidebar via stdio). Individual MCP tool handlers catch their own errors and return MCP error responses, so a bad agent call does not crash the process; only structural or unexpected errors do. Isolated MCP-only restart is rejected because the editor and MCP server share in-memory state and partial recovery invites half-consistent states.
 
 ### Editor disconnect from server
 
@@ -366,7 +366,7 @@ For repeat boots, sidebar opens the URL again; modern browsers focus an existing
 
 ### Self-update
 
-None in V1. Sidebar prints its version at boot. The user updates via `npx sidebar@latest` or `npm i -g sidebar`. No background version check, no nag banner, no `sidebar update` subcommand. If "I'm always on stale sidebar" emerges as a real problem, a single-line "newer version available" hint at boot can be added later without breaking anything.
+None in V1. Sidebar prints its version at boot. The user updates via `npx sidebar-md@latest` or `npm i -g sidebar-md`. No background version check, no nag banner, no `sidebar update` subcommand. If "I'm always on stale sidebar" emerges as a real problem, a single-line "newer version available" hint at boot can be added later without breaking anything.
 
 ### `.sidebar/connection.json` (the discovery file)
 
@@ -381,13 +381,13 @@ Written by the primary instance on boot, removed on graceful shutdown. Gitignore
 }
 ```
 
-A subsequent `npx sidebar --stdio` invocation reads the file and:
+A subsequent `npx sidebar-md --stdio` invocation reads the file and:
 
 1. If the file is missing or malformed: become primary.
 2. If the file is present and `pid` is alive (cross-platform `process-exists` check): become a proxy, forward stdio traffic to the primary's HTTP transport at `url`.
 3. If the file is present but `pid` is dead (process exited without removing the file, e.g. SIGKILL): treat as stale, remove the file, become primary.
 
-`npx sidebar` (standalone) performs the same check and refuses to start if a primary is alive: "primary already running at <url>; attach via that URL or stop the running primary first."
+`npx sidebar-md` (standalone) performs the same check and refuses to start if a primary is alive: "primary already running at <url>; attach via that URL or stop the running primary first."
 
 The "is the PID alive" check is fast and racy in principle. If two primaries race, whichever wins the HTTP port bind becomes primary; the loser sees `EADDRINUSE` and either falls through to proxy (if the winner's `connection.json` is now visible) or refuses to start.
 
@@ -410,13 +410,13 @@ The MCP `initialize` response includes a server description string. Sidebar pack
 2. The permission model: prose edits only via `resolve_mention` or accepted `suggestion` annotations.
 3. The `base_hash` protocol: refresh via `get_mention` and retry on conflict.
 4. The `is_draft` signal: when true, prefer to skip the file or create an agent-origin mention with `clarify` asking if it is safe to proceed.
-5. Pointer to the richer skill file: "for full guidance, run `npx sidebar scaffold-skill`."
+5. Pointer to the richer skill file: "for full guidance, run `npx sidebar-md scaffold-skill`."
 
 This tier is always present. It is the protocol baseline; the user does not opt out.
 
 ### Tier 2: `scaffold-skill` (the ceiling)
 
-`npx sidebar scaffold-skill [--into <path>]` writes a richer skill document (1500-2500 tokens) into the user's chosen skill directory.
+`npx sidebar-md scaffold-skill [--into <path>]` writes a richer skill document (1500-2500 tokens) into the user's chosen skill directory.
 
 Default target: `.claude/skills/sidebar-collaboration/SKILL.md`. Claude Code and Compound both discover skills at this path. Override via `--into <path>` for other agents or non-default locations.
 
