@@ -30,6 +30,12 @@ When you open the PR, attach proof that the slice cuts through every layer it cl
 
 Tests prove correctness in isolation. The demo proves the slice works end to end.
 
+## QA documentation
+
+Every slice ships a `docs/qa/slice-NN.md` file authored from `docs/qa/_template.md`. The QA doc is the single artifact a reviewer (or future maintainer) opens to learn how to validate the slice, replay the demo, and re-run the human checks that automated tests cannot cover.
+
+The QA doc is committed in the same PR as the slice. It is not a substitute for tests or for the demo evidence; it is the connective tissue that explains, in one place, how to exercise everything the slice ships. PRs that change behavior in an already-merged slice update that slice's QA doc in the same commit.
+
 ## Branch and PR convention
 
 * Branch name: `slice/NN-short-name` (for example, `slice/01-editor-shell`).
