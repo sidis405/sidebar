@@ -1,0 +1,42 @@
+# `npx sidebar init` evidence: idempotent merge with an unrelated entry
+
+# Step 1: pre-seed an unrelated MCP entry the user already had.
+$ cat .mcp.json
+{
+  "mcpServers": {
+    "other-thing": { "command": "node", "args": ["other.js"] }
+  }
+}
+
+# Step 2: write sidebar's entry. Existing entry is preserved.
+$ npx sidebar init claude-code
+sidebar init: updated /private/tmp/sidebar-qa-slice-02/.mcp.json
+  agent:         claude-code
+  mcpServers:    other-thing, sidebar
+
+Start claude-code in this project; it will spawn sidebar via stdio.
+
+$ cat .mcp.json
+{
+  "mcpServers": {
+    "other-thing": { "command": "node", "args": ["other.js"] },
+    "sidebar":     { "command": "npx",  "args": ["sidebar", "--stdio"] }
+  }
+}
+
+# Step 3: re-run. Idempotent: no duplicate, no rewrite of `other-thing`.
+$ npx sidebar init claude-code
+sidebar init: left unchanged /private/tmp/sidebar-qa-slice-02/.mcp.json
+  agent:         claude-code
+  mcpServers:    other-thing, sidebar
+
+# Step 4: --yes lets agents/CI run init without TTY.
+$ npx sidebar init --yes
+sidebar init: ... (defaults to claude-code)
+
+# Step 5: standalone refuses while a primary is alive.
+# (terminal A spawns `--stdio` first; terminal B then tries `npx sidebar`)
+$ npx sidebar
+primary sidebar already running at http://127.0.0.1:5180 (pid 84512).
+Attach via that URL or stop the running primary first.
+# exit code: 7

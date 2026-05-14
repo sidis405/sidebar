@@ -18,7 +18,13 @@ export type ClientMessage =
   | { kind: "newFile"; parent: string; name: string }
   | { kind: "newFolder"; parent: string; name: string }
   | { kind: "rename"; from: string; to: string }
-  | { kind: "delete"; path: string };
+  | { kind: "delete"; path: string }
+  /**
+   * Editor reports whether the in-memory buffer for `path` matches disk.
+   * The server forwards this into the dirty-buffer tracker that backs
+   * `read_doc`'s `is_draft` / `draft_age_seconds` fields (ADR-0005).
+   */
+  | { kind: "dirty"; path: string; isDirty: boolean };
 
 export type ServerMessage =
   | { kind: "welcome"; workspaceRoot: string; scope: string }

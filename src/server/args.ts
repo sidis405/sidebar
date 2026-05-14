@@ -1,4 +1,11 @@
+export type Subcommand = "serve" | "stdio" | "init";
+
 export type ParsedArgs = {
+  subcommand: Subcommand;
+  /** Set when subcommand is `init`. */
+  initAgent: string | undefined;
+  /** Set when subcommand is `init` and the user passed `--yes`. */
+  yes: boolean;
   port: number | undefined;
   scope: string | undefined;
   browser: string;
@@ -11,6 +18,9 @@ export class ArgsError extends Error {}
 
 export function parseArgs(argv: string[]): ParsedArgs {
   const out: ParsedArgs = {
+    subcommand: "serve",
+    initAgent: undefined,
+    yes: false,
     port: undefined,
     scope: undefined,
     browser: "default",
@@ -19,7 +29,24 @@ export function parseArgs(argv: string[]): ParsedArgs {
     helpRequested: false,
   };
 
-  for (let i = 0; i < argv.length; i++) {
+  // Subcommand detection: first non-flag positional argument selects the
+  // subcommand. `--stdio` is a flag, not a positional, so we handle it
+  // alongside other flags. Slice 01 only had `serve`; slice 02 adds
+  // `init` (and the `--stdio` invite hook).
+  let i = 0;
+  const first = argv[0];
+  if (first === "init") {
+    out.subcommand = "init";
+    i = 1;
+    // `init <agent>` is also accepted: read the next positional as the
+    // agent name.
+    if (argv[i] !== undefined && !argv[i].startsWith("--")) {
+      out.initAgent = argv[i];
+      i += 1;
+    }
+  }
+
+  for (; i < argv.length; i++) {
     const a = argv[i];
     switch (a) {
       case "--port":
@@ -50,6 +77,16 @@ export function parseArgs(argv: string[]): ParsedArgs {
         out.browser = v;
         break;
       }
+      case "--stdio":
+        if (out.subcommand !== "serve") {
+          throw new ArgsError("--stdio cannot be combined with a subcommand");
+        }
+        out.subcommand = "stdio";
+        break;
+      case "--yes":
+      case "-y":
+        out.yes = true;
+        break;
       case "--verbose":
         out.verbose = true;
         break;
@@ -64,9 +101,6 @@ export function parseArgs(argv: string[]): ParsedArgs {
         if (a.startsWith("--")) {
           throw new ArgsError(`unknown flag: ${a}`);
         }
-        // Positional args reserved for future subcommands (init,
-        // scaffold-skill). Slice 01 does not consume them; reject anything
-        // unexpected so silent typos don't get swallowed.
         throw new ArgsError(`unexpected argument: ${a}`);
     }
   }
@@ -76,9 +110,17 @@ export function parseArgs(argv: string[]): ParsedArgs {
 
 export function helpText(): string {
   return [
-    "Usage: sidebar [options]",
+    "Usage: sidebar [subcommand] [options]",
     "",
     "Local-first markdown editor and MCP server for human-agent doc collaboration.",
+    "",
+    "Subcommands:",
+    "  (default)         Run sidebar standalone (HTTP MCP + editor).",
+    "  init [agent]      Write a project-local .mcp.json that spawns sidebar via",
+    "                    stdio. Defaults to claude-code when no agent is named.",
+    "                    Pass --yes to skip the interactive prompt.",
+    "  --stdio           Internal: spawned by an MCP client. Becomes primary or",
+    "                    proxy depending on .sidebar/connection.json.",
     "",
     "Options:",
     "  --port <N>        Bind a specific HTTP port. --port 0 picks any free port.",
