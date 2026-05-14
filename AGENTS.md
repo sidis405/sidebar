@@ -47,41 +47,61 @@ The QA doc is not a per-slice verification script and not a test replay. Automat
 
 If you find an ambiguity, a contradiction with an ADR, a missing decision, or a state requirement that is not specified, do not guess. Post a comment on the issue describing the gap and stop. A human will resolve. You can resume after.
 
+## Conventional commits
+
+Every PR title must follow [Conventional Commits](https://www.conventionalcommits.org/). The `.github/workflows/pr-title.yml` workflow blocks merge until the title parses. Allowed types: `feat`, `fix`, `perf`, `refactor`, `docs`, `chore`, `test`, `build`, `ci`, `style`, `revert`.
+
+The PR title is what release-please reads (squash-merge inherits the title as the commit subject), so the type drives both the changelog and the next version bump:
+
+* `feat:` ⇒ minor bump (`0.1.0` → `0.2.0` while pre-1.0; `1.0.0` → `1.1.0` after).
+* `fix:` / `perf:` / `refactor:` / `docs:` ⇒ patch bump.
+* `feat!:` or any commit body with `BREAKING CHANGE:` ⇒ major bump.
+* `chore:`, `ci:`, `build:`, `test:`, `style:` are hidden from the changelog and do not bump.
+
+Pre-1.0, release-please is configured so `feat:` produces a minor bump and `fix:`/`refactor:`/`docs:` produce patch bumps (`bump-minor-pre-major: true`, `bump-patch-for-minor-pre-major: true`). After 1.0.0 this auto-flips to the standard semver mapping.
+
 ## Releasing
 
-`sidebar-md` is published to npm from GitHub Actions, not from a maintainer laptop. The publish workflow lives at `.github/workflows/publish.yml` and fires on any tag matching `v*.*.*`.
+`sidebar-md` is published to npm by GitHub Actions, never from a maintainer laptop. Releases are automated end to end via [release-please](https://github.com/googleapis/release-please). There are no manual version bumps and no manual tags.
 
-### Day-to-day release flow
+### How a release happens
 
-1. On `main`, bump `version` in `package.json` (e.g. `0.1.0` to `0.1.1`). Commit as `chore: release vX.Y.Z`.
-2. Tag the commit: `git tag vX.Y.Z`. The tag must match `package.json` exactly (the workflow fails fast otherwise).
-3. Push: `git push origin main && git push origin vX.Y.Z`.
-4. GitHub Actions runs `npm ci`, `typecheck`, `test`, `build`, and on green publishes with `npm publish --provenance --access public`. The provenance attestation links the published tarball to the exact commit and workflow run.
+1. PRs merge into `main` with Conventional Commit titles.
+2. The `release` workflow runs on every push to `main`. release-please scans commits since the last release tag and, if there's anything releasable, opens (or updates) a **release PR** titled like `chore(main): release 0.2.0`. The PR bumps `package.json` and `.release-please-manifest.json`, and writes `CHANGELOG.md`.
+3. A human reviews the release PR and merges it. (This is the only manual step.)
+4. release-please runs again on the merge commit, creates a GitHub Release + git tag (`vX.Y.Z`), and emits `release_created=true`.
+5. The `publish` job in the same workflow picks that up, runs `typecheck` / `test` / `build` again on the tagged commit, and publishes to npm with `npm publish --provenance --access public`. The provenance attestation links the tarball to the exact commit and workflow run.
 
-A re-tag of an already-published version is refused by the workflow (it `npm view`s first and exits non-zero on a hit). Bump the version before tagging again.
+A republish of an existing version is refused by the workflow (it consults `npm view` first). The whole loop is idempotent: re-running on the same merge commit publishes nothing.
 
 ### One-time npm setup (Trusted Publishing)
 
-The workflow authenticates to npm via OIDC, not a long-lived token. To enable that, the package owner registers this repo and workflow as a trusted publisher on npmjs.com:
+The publish job authenticates to npm via OIDC, not a long-lived token. To enable that, the package owner registers this repo and workflow as a trusted publisher on npmjs.com (one-time, web UI only):
 
 1. Visit https://www.npmjs.com/package/sidebar-md/access and sign in.
 2. Scroll to **Trusted publishers**. Click **Add trusted publisher**.
 3. Pick **GitHub Actions**. Fill in:
    * **Organization or user**: `sidis405`
    * **Repository**: `sidebar`
-   * **Workflow filename**: `publish.yml`
-   * **Environment name**: leave blank (the workflow does not gate on an environment)
+   * **Workflow filename**: `release.yml`
+   * **Environment name**: leave blank.
 4. Save.
 
-Once registered, the workflow publishes without `NPM_TOKEN`. Any pre-existing publish tokens for this package should be revoked at https://www.npmjs.com/settings/sidis405/tokens.
+Once registered, the workflow publishes without any `NPM_TOKEN` secret. Any pre-existing publish tokens for this package should be revoked at https://www.npmjs.com/settings/sidis405/tokens.
 
-### Local sanity before tagging
+### Local sanity before opening a PR
 
-The workflow runs `typecheck`, `test`, and `build`. Running them locally before tagging avoids a wasted CI cycle:
+The CI workflow runs typecheck, test, and build on every PR. Running them locally first avoids the round-trip:
 
 ```
 npm ci && npm run typecheck && npm run test && npm run build
 ```
+
+### When something goes wrong
+
+* **release-please PR is wrong (e.g. wants to bump to the wrong version)**. Close it. Fix the offending commits on `main` (revert or `git commit --amend` is not possible after merge, so use a follow-up PR with a corrective Conventional Commit). release-please opens a new release PR on the next push.
+* **CHANGELOG.md is missing an entry you wrote**. Check the PR title's commit type. `chore:`, `ci:`, `build:`, `test:`, `style:` are hidden by design. Use `docs:` or `refactor:` if it should appear.
+* **Publish job fails on OIDC error**. The trusted publisher entry on npmjs.com is missing or pointed at a different workflow filename. See the one-time setup above.
 
 ## Why this exists
 

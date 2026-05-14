@@ -1,0 +1,95 @@
+name: release
+
+# Two-stage automated release driven by Conventional Commits.
+#
+# Stage 1: release-please scans commits since the last release tag and
+# opens or updates a "release PR" that bumps `package.json` (and the
+# lockfile) and writes CHANGELOG.md. The PR sits open until a human
+# merges it.
+#
+# Stage 2: when the release PR is merged, release-please runs again on
+# the resulting push to main, creates a GitHub Release + git tag, and
+# emits `release_created=true`. The `publish` job picks that up,
+# re-verifies typecheck / test / build on the tagged commit, and
+# publishes to npm via OIDC Trusted Publishing with provenance.
+#
+# Auth is OIDC, not a long-lived NPM_TOKEN. The package owner must have
+# registered this repo + workflow as a Trusted Publisher on npmjs.com.
+# See AGENTS.md `## Releasing` for the one-time UI setup.
+
+on:
+  push:
+    branches: [main]
+
+# Default the workflow to read-only. Each job opts into the writes it needs.
+permissions:
+  contents: read
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+    steps:
+      - name: Run release-please
+        uses: googleapis/release-please-action@v4
+        id: release
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  publish:
+    needs: release-please
+    if: ${{ needs.release-please.outputs.release_created == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write  # OIDC Trusted Publishing + provenance attestation
+
+    steps:
+      - name: Checkout tagged release
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.release-please.outputs.tag_name }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+          cache: npm
+
+      # Trusted Publishing landed in npm 11.5.1. Pin to latest so a future
+      # Node update never silently regresses the publish path.
+      - name: Upgrade npm
+        run: npm install -g npm@latest
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Refuse to republish an existing version
+        run: |
+          set -euo pipefail
+          pkg=$(node -p "require('./package.json').version")
+          if npm view "sidebar-md@$pkg" version > /dev/null 2>&1; then
+            echo "::error::sidebar-md@$pkg already exists on npm. release-please should not have proposed this version."
+            exit 1
+          fi
+          echo "publishing sidebar-md@$pkg"
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm run test
+
+      - name: Build
+        run: npm run build
+
+      - name: Publish to npm
+        run: npm publish --provenance --access public

@@ -1,0 +1,37 @@
+name: pr-title
+
+# Enforces a Conventional Commits prefix on the PR title. release-please
+# reads the squash-merged commit (which inherits the PR title by default)
+# to compute the next version bump and the CHANGELOG entry, so we gate
+# this at PR time to avoid noisy main-branch fixups.
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  pull-requests: read
+
+jobs:
+  lint:
+    name: Conventional commit prefix
+    runs-on: ubuntu-latest
+    steps:
+      - uses: amannn/action-semantic-pull-request@v5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          types: |
+            feat
+            fix
+            perf
+            refactor
+            docs
+            chore
+            test
+            build
+            ci
+            style
+            revert
+          requireScope: false
+          validateSingleCommit: false
