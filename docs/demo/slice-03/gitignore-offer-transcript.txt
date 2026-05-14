@@ -1,0 +1,39 @@
+$ cd /tmp/sidebar-qa-slice-03/
+$ git init -q .
+$ printf 'node_modules\n' > .gitignore
+$ printf '# notes\n' > docs/scratch.md
+
+# At this point .sidebar/ does not exist; sidebar has no persistent state.
+$ ls -A
+.git    .gitignore    docs
+
+# The first call into the lazy-write API creates .sidebar/local.json and
+# fires the gitignore offer (the spec's "on creation of .sidebar/local.json"
+# trigger). The reviewer answers `y` to append.
+
+$ printf 'y\n' | node /path/to/sidebar/docs/demo/slice-03/_capture-config.mjs /path/to/sidebar
+sidebar config: writing .sidebar/local.json (port=5555)
+
+sidebar created /tmp/sidebar-qa-slice-03/.sidebar/local.json (per-machine state).
+Detected /tmp/sidebar-qa-slice-03/.gitignore without an entry for .sidebar/local.json.
+Append `.sidebar/local.json` to .gitignore? [y/N]:
+result: {
+  "created": true,
+  "gitignoreAction": "appended"
+}
+
+.gitignore is now:
+----
+node_modules
+.sidebar/local.json
+----
+
+# Note the gitignoreAction in the result: "appended". The other documented
+# values are "absent" (no .git/), "already-ignored" (line already present),
+# "declined" (user said no), and "no-prompt" (the caller did not supply a
+# consent callback; the writer proceeds without touching .gitignore).
+
+# Subsequent persistLocal calls do NOT re-offer: the file already exists, so
+# the spec's "on creation of" trigger does not fire. Each subsequent boot
+# instead emits the per-boot stderr warning shown in
+# `unignored-warning-transcript.txt` if the file ever ends up unignored.

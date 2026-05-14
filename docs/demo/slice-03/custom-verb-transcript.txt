@@ -1,0 +1,69 @@
+$ cd /tmp/sidebar-qa-slice-03d
+$ cat .sidebar/config.json
+{
+  "version": 1,
+  "verbs": {
+    "human": {
+      "tighten": { "mode": "replace" },
+      "audit": { "mode": "annotation" }
+    },
+    "agent": {
+      "estimate": {}
+    }
+  }
+}
+
+$ node /path/to/sidebar/docs/demo/slice-03/_capture-verbs.mjs /path/to/sidebar
+Built-in human verbs (from src/server/verbs/builtin.ts):
+  rephrase               mode=replace
+  expand                 mode=replace
+  shorten                mode=replace
+  remove-if-redundant    mode=replace
+  factcheck              mode=annotation
+  question               mode=annotation
+  review                 mode=annotation
+  explain                mode=annotation
+
+Built-in agent verbs:
+  clarify
+  decide
+  confirm
+  review
+
+Loading .sidebar/config.json at /tmp/sidebar-qa-slice-03d ...
+{
+  "version": 1,
+  "verbs": {
+    "human": {
+      "tighten": { "mode": "replace" },
+      "audit": { "mode": "annotation" }
+    },
+    "agent": {
+      "estimate": {}
+    }
+  }
+}
+
+Resolved catalog (built-in + custom):
+  human:
+    rephrase               mode=replace
+    expand                 mode=replace
+    shorten                mode=replace
+    remove-if-redundant    mode=replace
+    factcheck              mode=annotation
+    question               mode=annotation
+    review                 mode=annotation
+    explain                mode=annotation
+    tighten                mode=replace  (custom)
+    audit                  mode=annotation  (custom)
+  agent:
+    clarify
+    decide
+    confirm
+    review
+    estimate  (custom)
+
+# Slices 4-6 consume the catalog above to validate verb references from
+# both human-authored markers on disk and agent MCP calls. The (custom)
+# tag is informational here: VerbCatalog.HumanVerb.builtin is the field
+# downstream slices read.

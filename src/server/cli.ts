@@ -7,6 +7,15 @@ import { createInterface } from "node:readline/promises";
 import { fileURLToPath } from "node:url";
 import open from "open";
 import { ArgsError, type ParsedArgs, helpText, parseArgs } from "./args.js";
+import {
+  ConfigLoadError,
+  LOCAL_REL,
+  type LoadConfigResult,
+  type SidebarConfigFile,
+  type SidebarLocalFile,
+  gitignoreState,
+  loadProjectConfig,
+} from "./config/index.js";
 import { probeConnectionFile } from "./connection-file.js";
 import { SUPPORTED_AGENTS, type SupportedAgent, isSupportedAgent, runInit } from "./init.js";
 import { log, setLogLevel } from "./log.js";
@@ -49,16 +58,78 @@ async function main(): Promise<void> {
   if (args.verbose) setLogLevel("DEBUG");
   else if (args.quiet) setLogLevel("WARN");
 
+  // `init` writes a .mcp.json; it does not need the .sidebar/ config layer.
+  // Everything else passes through the loader so an invalid file refuses
+  // boot per the Q9 "no silent fallback" stance.
+  if (args.subcommand === "init") {
+    await runInitCommand(args);
+    return;
+  }
+
+  const cwd = procCwd();
+  let loaded: LoadConfigResult;
+  try {
+    loaded = await loadProjectConfig(cwd);
+  } catch (e) {
+    if (e instanceof ConfigLoadError) {
+      process.stderr.write(`${e.message}\n`);
+      exit(8);
+    }
+    throw e;
+  }
+  warnUnignoredLocal(cwd, loaded.local);
+
+  const settings = resolveSettings(args, loaded);
+
   switch (args.subcommand) {
-    case "init":
-      await runInitCommand(args);
-      return;
     case "stdio":
-      await runStdioCommand(args);
+      await runStdioCommand(settings);
       return;
     case "serve":
-      await runServeCommand(args);
+      await runServeCommand(settings);
       return;
+  }
+}
+
+type EffectiveSettings = {
+  /** Workspace glob (CLI > config.json > built-in default). */
+  scope: string;
+  /** True when scope came from CLI or config.json (suppresses the docs/
+   *  prompt because the user has made an explicit choice). */
+  scopeFromDisk: boolean;
+  /** Explicit port (number) or undefined for fallback range. CLI > local.json. */
+  port: number | undefined;
+  /** True when port came from CLI or local.json — collision must NOT fall
+   *  back, per spec: Port collision on startup. */
+  portExplicit: boolean;
+  /** Browser launch mode. CLI > local.json > "default". */
+  browser: string;
+};
+
+function resolveSettings(args: ParsedArgs, loaded: LoadConfigResult): EffectiveSettings {
+  const cfg: SidebarConfigFile | null = loaded.config;
+  const loc: SidebarLocalFile | null = loaded.local;
+
+  const scope = args.scope ?? cfg?.scope ?? defaultScope();
+  const scopeFromDisk = args.scope !== undefined || cfg?.scope !== undefined;
+
+  const port = args.port ?? loc?.port;
+  const portExplicit = args.port !== undefined || loc?.port !== undefined;
+
+  const browser = args.browser ?? loc?.browser ?? "default";
+
+  return { scope, scopeFromDisk, port, portExplicit, browser };
+}
+
+function warnUnignoredLocal(cwd: string, local: SidebarLocalFile | null): void {
+  if (!local) return;
+  if (gitignoreState(cwd) === "unignored") {
+    // Spec: Configuration / Gitignore behavior. Single-line stderr nag; no
+    // persistent dismissal flag.
+    process.stderr.write(
+      `warning: ${LOCAL_REL} exists in this project but is not gitignored. ` +
+        `Add it to .gitignore (per-machine state should not be committed).\n`,
+    );
   }
 }
 
@@ -124,25 +195,20 @@ async function promptForAgent(): Promise<string> {
   }
 }
 
-async function runStdioCommand(args: ParsedArgs): Promise<void> {
+async function runStdioCommand(settings: EffectiveSettings): Promise<void> {
   const cwd = procCwd();
-  const workspace = await prepareWorkspaceOrExit(args, cwd, { promptOnMissing: false });
+  const workspace = await prepareWorkspaceOrExit(settings, cwd, { promptOnMissing: false });
   const staticRoot = resolveStaticRoot();
 
   const boot = await bootStdio({
     cwd,
     startPrimary: async () => {
-      let handle: ServerHandle;
-      if (args.port !== undefined) {
-        handle = await startServer({ workspace, port: args.port, staticRoot });
-      } else {
-        handle = await tryFallback(workspace, staticRoot);
-      }
+      const handle = await bindServer(workspace, settings, staticRoot);
       process.stderr.write(`sidebar primary listening at ${handle.url}\n`);
       process.stderr.write(`  workspace: ${workspace.root}\n`);
       process.stderr.write(`  scope:     ${workspace.scope}\n`);
       // Only the primary opens a browser; proxies share the primary tab.
-      await maybeLaunchBrowser(args.browser, handle.url);
+      await maybeLaunchBrowser(settings.browser, handle.url);
       return handle;
     },
   });
@@ -151,7 +217,7 @@ async function runStdioCommand(args: ParsedArgs): Promise<void> {
   await boot.done;
 }
 
-async function runServeCommand(args: ParsedArgs): Promise<void> {
+async function runServeCommand(settings: EffectiveSettings): Promise<void> {
   const cwd = procCwd();
 
   // ADR-0007 / spec: Invocation modes. Standalone must refuse to start while
@@ -172,49 +238,60 @@ async function runServeCommand(args: ParsedArgs): Promise<void> {
     await removeConnectionFile(cwd);
   }
 
-  const workspace = await prepareWorkspaceOrExit(args, cwd, { promptOnMissing: true });
+  const workspace = await prepareWorkspaceOrExit(settings, cwd, { promptOnMissing: true });
   const staticRoot = resolveStaticRoot();
 
-  let handle: ServerHandle;
-  if (args.port !== undefined) {
-    try {
-      handle = await startServer({ workspace, port: args.port, staticRoot });
-    } catch (e) {
-      const code = (e as NodeJS.ErrnoException).code;
-      if (code === "EADDRINUSE") {
-        process.stderr.write(
-          `port ${args.port} is already in use (EADDRINUSE). Pick a different --port, or use --port 0.\n`,
-        );
-        exit(4);
-      }
-      throw e;
-    }
-  } else {
-    handle = await tryFallback(workspace, staticRoot);
-  }
+  const handle = await bindServer(workspace, settings, staticRoot);
 
   process.stderr.write(`sidebar listening at ${handle.url}\n`);
   process.stderr.write(`  workspace: ${workspace.root}\n`);
   process.stderr.write(`  scope:     ${workspace.scope}\n`);
 
-  await maybeLaunchBrowser(args.browser, handle.url);
+  await maybeLaunchBrowser(settings.browser, handle.url);
 
   installShutdown(handle);
 }
 
+// Bind the HTTP server honouring the precedence rules: an explicit port
+// (CLI or local.json) refuses on collision; an absent port walks the
+// 5180-5189 fallback range.
+async function bindServer(
+  workspace: ReturnType<typeof createWorkspace>,
+  settings: EffectiveSettings,
+  staticRoot: string | null,
+): Promise<ServerHandle> {
+  if (settings.portExplicit && settings.port !== undefined) {
+    try {
+      return await startServer({ workspace, port: settings.port, staticRoot });
+    } catch (e) {
+      const code = (e as NodeJS.ErrnoException).code;
+      if (code === "EADDRINUSE") {
+        process.stderr.write(
+          `port ${settings.port} is already in use (EADDRINUSE). ` +
+            `Pick a different --port, or use --port 0.\n`,
+        );
+        exit(4);
+      }
+      throw e;
+    }
+  }
+  return tryFallback(workspace, staticRoot);
+}
+
 async function prepareWorkspaceOrExit(
-  args: ParsedArgs,
+  settings: EffectiveSettings,
   cwd: string,
   opts: { promptOnMissing: boolean },
 ): Promise<ReturnType<typeof createWorkspace>> {
-  let scope = args.scope ?? defaultScope();
-  const scopeFromCli = args.scope !== undefined;
+  let scope = settings.scope;
 
-  if (!scopeFromCli && isDefaultScope(scope) && !defaultScopeDirExists(cwd)) {
+  // The docs/ prompt only fires for the *default* scope. A scope coming from
+  // either CLI or config.json is the user's explicit choice; we don't second-
+  // guess it.
+  if (!settings.scopeFromDisk && isDefaultScope(scope) && !defaultScopeDirExists(cwd)) {
     if (!opts.promptOnMissing) {
       // --stdio is non-interactive (the user's agent is on the other end of
-      // stdio). Refuse rather than silently fall back. The user can pass
-      // --scope, or `npx sidebar` interactively to create docs/.
+      // stdio). Refuse rather than silently fall back.
       process.stderr.write(
         `docs/ not found at ${cwd}.\n` +
           `Sidebar's --stdio mode is non-interactive. ` +

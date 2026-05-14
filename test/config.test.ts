@@ -15,7 +15,7 @@ import {
   persistConfig,
   persistLocal,
 } from "../src/server/config/index.ts";
-import { destroyWorkspace, launchCli, makeWorkspace } from "./helpers.ts";
+import { destroyWorkspace, launchCli, makeWorkspace, waitFor } from "./helpers.ts";
 
 // Compact helper: drop a fixture file into the workspace.
 async function write(cwd: string, rel: string, body: string): Promise<void> {
@@ -109,11 +109,7 @@ describe("config.json: schema validation", () => {
   });
 
   it("rejects an unknown top-level key", async () => {
-    await write(
-      cwd,
-      ".sidebar/config.json",
-      JSON.stringify({ version: 1, mysteryKey: true }),
-    );
+    await write(cwd, ".sidebar/config.json", JSON.stringify({ version: 1, mysteryKey: true }));
     await expect(loadProjectConfig(cwd)).rejects.toThrow(/mysteryKey/);
   });
 
@@ -240,11 +236,7 @@ describe("local.json: schema validation", () => {
   });
 
   it("rejects an unknown top-level key", async () => {
-    await write(
-      cwd,
-      ".sidebar/local.json",
-      JSON.stringify({ version: 1, theme: "dark" }),
-    );
+    await write(cwd, ".sidebar/local.json", JSON.stringify({ version: 1, theme: "dark" }));
     await expect(loadProjectConfig(cwd)).rejects.toThrow(/theme/);
   });
 
@@ -254,48 +246,28 @@ describe("local.json: schema validation", () => {
   });
 
   it("rejects port out of range", async () => {
-    await write(
-      cwd,
-      ".sidebar/local.json",
-      JSON.stringify({ version: 1, port: 70000 }),
-    );
+    await write(cwd, ".sidebar/local.json", JSON.stringify({ version: 1, port: 70000 }));
     await expect(loadProjectConfig(cwd)).rejects.toThrow(/port/);
   });
 
   it("rejects port of wrong type", async () => {
-    await write(
-      cwd,
-      ".sidebar/local.json",
-      JSON.stringify({ version: 1, port: "5180" }),
-    );
+    await write(cwd, ".sidebar/local.json", JSON.stringify({ version: 1, port: "5180" }));
     await expect(loadProjectConfig(cwd)).rejects.toThrow(/port/);
   });
 
   it("rejects browser of wrong type", async () => {
-    await write(
-      cwd,
-      ".sidebar/local.json",
-      JSON.stringify({ version: 1, browser: 42 }),
-    );
+    await write(cwd, ".sidebar/local.json", JSON.stringify({ version: 1, browser: 42 }));
     await expect(loadProjectConfig(cwd)).rejects.toThrow(/browser/);
   });
 
   it("accepts browser value 'none'", async () => {
-    await write(
-      cwd,
-      ".sidebar/local.json",
-      JSON.stringify({ version: 1, browser: "none" }),
-    );
+    await write(cwd, ".sidebar/local.json", JSON.stringify({ version: 1, browser: "none" }));
     const out = await loadProjectConfig(cwd);
     expect(out.local?.browser).toBe("none");
   });
 
   it("accepts an arbitrary platform-specific browser identifier", async () => {
-    await write(
-      cwd,
-      ".sidebar/local.json",
-      JSON.stringify({ version: 1, browser: "firefox" }),
-    );
+    await write(cwd, ".sidebar/local.json", JSON.stringify({ version: 1, browser: "firefox" }));
     const out = await loadProjectConfig(cwd);
     expect(out.local?.browser).toBe("firefox");
   });
@@ -328,7 +300,10 @@ describe("CLI: persisted scope from config.json", () => {
     try {
       const url = await cli.url;
       expect(url).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/);
-      expect(cli.stderr()).toContain("notes/**/*.md");
+      // Scope line lands after the URL line; poll briefly so we don't race it.
+      await waitFor(() => cli.stderr().includes("notes/**/*.md"), {
+        label: "scope line in stderr",
+      });
     } finally {
       await cli.stop();
     }
@@ -345,11 +320,11 @@ describe("CLI: persisted scope from config.json", () => {
     const cli = launchCli(cwd, ["--scope", "other/**/*.md"]);
     try {
       await cli.url;
-      expect(cli.stderr()).toContain("other/**/*.md");
+      await waitFor(() => cli.stderr().includes("other/**/*.md"), {
+        label: "scope line in stderr",
+      });
       // And: we did not mutate the on-disk config.json.
-      const stillOnDisk = JSON.parse(
-        await readFile(join(cwd, ".sidebar", "config.json"), "utf8"),
-      );
+      const stillOnDisk = JSON.parse(await readFile(join(cwd, ".sidebar", "config.json"), "utf8"));
       expect(stillOnDisk.scope).toBe("notes/**/*.md");
     } finally {
       await cli.stop();
@@ -367,11 +342,7 @@ describe("CLI: persisted port from local.json", () => {
   });
 
   it("local.json port is honored when --port is absent", async () => {
-    await write(
-      cwd,
-      ".sidebar/local.json",
-      JSON.stringify({ version: 1, port: 5291 }),
-    );
+    await write(cwd, ".sidebar/local.json", JSON.stringify({ version: 1, port: 5291 }));
     const cli = launchCli(cwd, []);
     try {
       const url = await cli.url;
@@ -382,11 +353,7 @@ describe("CLI: persisted port from local.json", () => {
   });
 
   it("--port on the CLI overrides local.json for one boot", async () => {
-    await write(
-      cwd,
-      ".sidebar/local.json",
-      JSON.stringify({ version: 1, port: 5291 }),
-    );
+    await write(cwd, ".sidebar/local.json", JSON.stringify({ version: 1, port: 5291 }));
     const cli = launchCli(cwd, ["--port", "5292"]);
     try {
       const url = await cli.url;
@@ -403,11 +370,7 @@ describe("CLI: persisted port from local.json", () => {
     const { createServer } = await import("node:net");
     const blocker = createServer().listen(5293, "127.0.0.1");
     try {
-      await write(
-        cwd,
-        ".sidebar/local.json",
-        JSON.stringify({ version: 1, port: 5293 }),
-      );
+      await write(cwd, ".sidebar/local.json", JSON.stringify({ version: 1, port: 5293 }));
       const cli = launchCli(cwd, []);
       const exit = await new Promise<number | null>((res) => {
         cli.child.once("exit", (code) => res(code));
@@ -430,11 +393,7 @@ describe("CLI: persisted browser from local.json", () => {
   });
 
   it("local.json browser=none short-circuits launch (no SIDEBAR_OPEN required)", async () => {
-    await write(
-      cwd,
-      ".sidebar/local.json",
-      JSON.stringify({ version: 1, browser: "none" }),
-    );
+    await write(cwd, ".sidebar/local.json", JSON.stringify({ version: 1, browser: "none" }));
     // SIDEBAR_OPEN=fail would crash the open path if it ran; we assert that
     // the URL still prints and the process stays alive — i.e. the persisted
     // `browser: none` short-circuited before `open` was called.
@@ -556,11 +515,7 @@ describe("CLI: unignored-local warning at boot", () => {
   it("emits a single-line stderr warning when local.json is unignored", async () => {
     await mkdir(join(cwd, ".git"), { recursive: true });
     await write(cwd, ".gitignore", "node_modules\n");
-    await write(
-      cwd,
-      ".sidebar/local.json",
-      JSON.stringify({ version: 1, port: 0 }),
-    );
+    await write(cwd, ".sidebar/local.json", JSON.stringify({ version: 1, port: 0 }));
     const cli = launchCli(cwd, []);
     try {
       await cli.url;
@@ -576,11 +531,7 @@ describe("CLI: unignored-local warning at boot", () => {
   it("does not warn when local.json is already gitignored", async () => {
     await mkdir(join(cwd, ".git"), { recursive: true });
     await write(cwd, ".gitignore", ".sidebar/local.json\n");
-    await write(
-      cwd,
-      ".sidebar/local.json",
-      JSON.stringify({ version: 1, port: 0 }),
-    );
+    await write(cwd, ".sidebar/local.json", JSON.stringify({ version: 1, port: 0 }));
     const cli = launchCli(cwd, []);
     try {
       await cli.url;
@@ -594,11 +545,7 @@ describe("CLI: unignored-local warning at boot", () => {
   });
 
   it("does not warn when .git/ is absent (no repo, no expectation)", async () => {
-    await write(
-      cwd,
-      ".sidebar/local.json",
-      JSON.stringify({ version: 1, port: 0 }),
-    );
+    await write(cwd, ".sidebar/local.json", JSON.stringify({ version: 1, port: 0 }));
     const cli = launchCli(cwd, []);
     try {
       await cli.url;
@@ -646,11 +593,7 @@ describe("CLI: refuses to start on invalid config", () => {
 
   it("rejects an unknown top-level key with a message naming the key", async () => {
     cwd = await makeWorkspace();
-    await write(
-      cwd,
-      ".sidebar/config.json",
-      JSON.stringify({ version: 1, mystery: 1 }),
-    );
+    await write(cwd, ".sidebar/config.json", JSON.stringify({ version: 1, mystery: 1 }));
     const cli = launchCli(cwd, []);
     const exit = await new Promise<number | null>((res) => {
       cli.child.once("exit", (code) => res(code));

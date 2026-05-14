@@ -1,0 +1,36 @@
+$ cd /tmp/sidebar-qa-slice-03b/
+
+# Reviewer setup: a project with .git/ initialised and .gitignore that
+# does NOT include .sidebar/local.json. The user (or an earlier slice's UI)
+# already put a local.json on disk via the lazy-write API.
+$ ls -A
+.git    .gitignore    .sidebar    docs
+
+$ cat .gitignore
+node_modules
+
+$ cat .sidebar/local.json
+{
+  "version": 1,
+  "port": 0
+}
+
+# Per the spec ("at each subsequent boot, sidebar emits a single-line
+# warning"), every boot from now until the file is either gitignored or
+# removed will print one warning line to stderr. No persistent dismissal
+# flag.
+
+$ SIDEBAR_OPEN=noop node /path/to/sidebar/dist/server/cli.js --browser none --port 0
+warning: .sidebar/local.json exists in this project but is not gitignored. Add it to .gitignore (per-machine state should not be committed).
+sidebar listening at http://127.0.0.1:63767
+  workspace: /tmp/sidebar-qa-slice-03b/docs
+  scope:     docs/**/*.md
+
+# Once the user appends `.sidebar/local.json` to .gitignore, the warning
+# disappears on the next boot.
+
+$ printf '.sidebar/local.json\n' >> .gitignore
+$ SIDEBAR_OPEN=noop node /path/to/sidebar/dist/server/cli.js --browser none --port 0
+sidebar listening at http://127.0.0.1:63768
+  workspace: /tmp/sidebar-qa-slice-03b/docs
+  scope:     docs/**/*.md

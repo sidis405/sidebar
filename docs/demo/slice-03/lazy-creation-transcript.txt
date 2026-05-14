@@ -1,0 +1,44 @@
+# Spec: Configuration. "The directory and files appear lazily the first
+# time the user performs an action that needs persistence."
+
+# ---- Standalone boot: no .sidebar/ at all -------------------------------
+
+$ cd /tmp/sidebar-qa-slice-03e
+$ ls -A .
+docs
+
+$ SIDEBAR_OPEN=noop node /path/to/sidebar/dist/server/cli.js --browser none --port 0
+# (printed URL to stderr; user Ctrl-Cs after a moment)
+
+$ ls -A .
+docs
+
+# No .sidebar/ directory, no config.json, no local.json. Sidebar booted on
+# in-memory defaults and left the working tree untouched. Adding the file
+# only happens through the lazy-write API (persistLocal/persistConfig).
+
+# ---- --stdio boot: .sidebar/connection.json only ------------------------
+
+$ cd /tmp/sidebar-qa-slice-03f
+$ ls -A .
+docs
+
+# The agent's MCP client spawns sidebar with --stdio. Sidebar becomes the
+# primary, which writes .sidebar/connection.json (per ADR-0007 / spec:
+# Form Factor) for proxy discovery.
+
+$ SIDEBAR_OPEN=noop node /path/to/sidebar/dist/server/cli.js --stdio &
+$ sleep 2
+$ ls -A .
+.sidebar
+docs
+
+$ ls -A .sidebar
+connection.json
+
+# config.json and local.json are still absent — connection.json is
+# discovery state, not configuration, and is allowed to live in the
+# .sidebar/ directory without triggering the lazy-write trigger.
+
+$ pkill -INT -f "sidebar.*--stdio"
+# On graceful shutdown, connection.json is removed by sidebar (slice 02).
