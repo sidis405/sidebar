@@ -1,6 +1,6 @@
 {
   "name": "sidebar-md",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Local-first markdown editor with a co-author seat for your MCP-speaking agent (Claude Code, Codex, Aider).",
   "license": "MIT",
   "author": "Sidrit Trandafili",
