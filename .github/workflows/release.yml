@@ -9,9 +9,14 @@ name: release
 #
 # Stage 2: when the release PR is merged, release-please runs again on
 # the resulting push to main, creates a GitHub Release + git tag, and
-# emits `release_created=true`. The `publish` job picks that up,
-# re-verifies typecheck / test / build on the tagged commit, and
+# emits `release_created=true`. The `publish` job picks that up, runs
+# `npm run build` to produce the publishable `dist/` artifact, and
 # publishes to npm via OIDC Trusted Publishing with provenance.
+# Typecheck and test deliberately do NOT run here: PR CI gates those
+# on every commit, and release-please PRs only touch
+# package.json / lockfile / CHANGELOG.md (no source changes), so
+# re-running them at publish time is duplicate work that just slows
+# the release.
 #
 # Auth is OIDC, not a long-lived NPM_TOKEN. The package owner must have
 # registered this repo + workflow as a Trusted Publisher on npmjs.com.
@@ -81,12 +86,6 @@ jobs:
             exit 1
           fi
           echo "publishing sidebar-md@$pkg"
-
-      - name: Typecheck
-        run: npm run typecheck
-
-      - name: Test
-        run: npm run test
 
       - name: Build
         run: npm run build
